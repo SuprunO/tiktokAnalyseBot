@@ -78,12 +78,12 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     return res.sendStatus(200);
   }
 
-  const jokePrompt = `Склади кумедний жарт українською мовою, використовуючи ці три слова: ${userInput}`;
+  const jokePrompt = `Придумай короткий, дотепний жарт українською мовою, використовуючи рівно ці три слова: ${userInput}. Жарт має бути зрозумілим, веселим і не образливим. Уникай тем про політику, релігію, національність, фізичні вади та чорний гумор. Формат — як анекдот або одно-рядковий жарт. Дай один найсмішніший варіант.`;
   try {
     const joke = await chatWithGPT(jokePrompt);
 
     // Image generation prompt (simplified)
-    const imagePrompt = `Ілюстрація до жарту: ${joke}`;
+    const imagePrompt = `Веселе ілюстроване зображення до цього українського жарту без тексту: ${joke}`;
     const imageUrl = await generateImage(imagePrompt);
 
     // Send image with joke as caption
