@@ -41,7 +41,7 @@ async function generateImage(jokeText) {
       prompt: stylePrompt,
       n: 1,
       size: "512x512",
-      response_format: 'url'
+      response_format: "url"
     },
     {
       headers: {
