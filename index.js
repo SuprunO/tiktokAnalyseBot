@@ -31,7 +31,7 @@ async function chatWithGPT(prompt) {
 
 // === Public API Endpoint ===
 app.get('/chat', async (req, res) => {
-  const prompt = req.query.prompt || 'Tell me a joke';
+  const prompt = req.query.prompt || 'Розкажи смішний жарт украінською мовою';
   try {
     const reply = await chatWithGPT(prompt);
     res.json({ reply });
