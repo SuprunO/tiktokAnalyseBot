@@ -66,71 +66,60 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   const message = req.body.message;
   const callbackQuery = req.body.callback_query;
 
-  // === Обробка callback-кнопки ===
-  if (callbackQuery) {
-    const chatId = callbackQuery.message.chat.id;
-    const originalText = callbackQuery.data; // містить 3 слова
-
-    const prompt = `Придумай короткий, дотепний жарт українською мовою, використовуючи рівно ці три слова: ${originalText}. Жарт має бути зрозумілим, веселим і не образливим. Уникай тем про політику, релігію, національність, фізичні вади та чорний гумор. Формат — як анекдот або одно-рядковий жарт. Дай один найсмішніший варіант.`;
-
-    try {
-      const reply = await chatWithGPT(prompt);
-
+  const processInput = async (chatId, textInput) => {
+    const words = textInput.trim().split(/\s+/);
+    if (words.length !== 3) {
       await axios.post(`${TELEGRAM_API}/sendMessage`, {
         chat_id: chatId,
-        text: reply,
+        text: 'Будь ласка, надішліть рівно три слова для створення жарту 😊'
+      });
+      return;
+    }
+
+    const prompt = `Придумай короткий, дотепний жарт українською мовою, використовуючи рівно ці три слова: ${textInput}. Жарт має бути зрозумілим, веселим і не образливим. Уникай тем про політику, релігію, національність, фізичні вади та чорний гумор. Формат — як анекдот або одно-рядковий жарт.`;
+
+    try {
+      const joke = await chatWithGPT(prompt);
+
+      const imagePrompt = `Уяви цей жарт як кольорову ілюстрацію в стилі Pixar. Без тексту, з простим фоном. "${joke}"`;
+      const imageUrl = await generateImage(imagePrompt);
+
+      await axios.post(`${TELEGRAM_API}/sendPhoto`, {
+        chat_id: chatId,
+        photo: imageUrl,
+        caption: joke,
         reply_markup: {
           inline_keyboard: [[
             {
               text: 'Спробувати ще раз 😄',
-              callback_data: originalText
+              callback_data: textInput
             }
           ]]
         }
       });
     } catch (err) {
-      console.error('Telegram callback error:', err);
+      console.error('Telegram bot error:', err?.response?.data || err.message);
+      await axios.post(`${TELEGRAM_API}/sendMessage`, {
+        chat_id: chatId,
+        text: 'На жаль, виникла помилка під час створення жарту або картинки 😢'
+      });
     }
+  };
 
+  // === Handle callback ===
+  if (callbackQuery) {
+    const chatId = callbackQuery.message.chat.id;
+    const textInput = callbackQuery.data;
+    await processInput(chatId, textInput);
     return res.sendStatus(200);
   }
 
-  if (!message || !message.text) return res.sendStatus(200);
-
-  const chatId = message.chat.id;
-  const userInput = message.text;
-  const words = userInput.trim().split(/\s+/);
-  if (words.length !== 3) {
-    await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: chatId,
-      text: 'Будь ласка, надішліть рівно три слова для створення жарту 😊'
-    });
+  // === Handle message ===
+  if (message?.text) {
+    const chatId = message.chat.id;
+    const textInput = message.text;
+    await processInput(chatId, textInput);
     return res.sendStatus(200);
-  }
-
-  const prompt = `Придумай короткий, дотепний жарт українською мовою, використовуючи рівно ці три слова: ${userInput}. Жарт має бути зрозумілим, веселим і не образливим. Уникай тем про політику, релігію, національність, фізичні вади та чорний гумор. Формат — як анекдот або одно-рядковий жарт. Дай один найсмішніший варіант.`;
-
-  try {
-    const reply = await chatWithGPT(prompt);
-
-    await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: chatId,
-      text: reply,
-      reply_markup: {
-        inline_keyboard: [[
-          {
-            text: 'Спробувати ще раз 😄',
-            callback_data: userInput
-          }
-        ]]
-      }
-    });
-  } catch (err) {
-    console.error('Telegram bot error:', err);
-    await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: chatId,
-      text: 'На жаль, виникла помилка під час створення жарту 😢'
-    });
   }
 
   res.sendStatus(200);
