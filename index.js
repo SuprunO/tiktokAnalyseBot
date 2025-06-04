@@ -10,13 +10,8 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
-function encodeData(data) {
-  return Buffer.from(data).toString('base64');
-}
-
-function decodeData(data) {
-  return Buffer.from(data, 'base64').toString('utf-8');
-}
+// Локальний кеш для зберігання жартів по ID
+const jokesCache = new Map();
 
 async function chatWithGPT(prompt) {
   try {
@@ -36,7 +31,7 @@ async function chatWithGPT(prompt) {
     return response.data.choices[0].message.content.trim();
   } catch (error) {
     console.error('Error in chatWithGPT:', error.response?.data || error.message || error);
-    throw error; // щоб зовнішній блок try/catch міг зловити
+    throw error;
   }
 }
 
@@ -46,7 +41,7 @@ async function generateImage(prompt) {
       'https://api.openai.com/v1/images/generations',
       {
         model: 'dall-e-3',
-        prompt: prompt,
+        prompt,
         n: 1,
         size: '1024x1024',
       },
@@ -68,7 +63,6 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   const body = req.body;
   console.log('Incoming update:', JSON.stringify(body, null, 2));
 
-  // Обробка callback_query (натискання кнопки)
   if (body.callback_query) {
     const callback = body.callback_query;
     const chatId = callback.message.chat.id;
@@ -81,26 +75,32 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
       });
     } catch (err) {
       console.error('Failed to answer callback query:', err.response?.data || err.message || err);
-      // Не зупиняємо роботу, просто лог
     }
 
     if (data.startsWith('generate_image:')) {
-      const encodedJoke = data.split('generate_image:')[1];
-      const joke = decodeData(encodedJoke);
+      const id = data.split('generate_image:')[1];
+      const joke = jokesCache.get(id);
+      if (!joke) {
+        await axios.post(`${TELEGRAM_API}/sendMessage`, {
+          chat_id,
+          text: 'Жарт не знайдено або час очікування минув. Будь ласка, створіть жарт заново.',
+        });
+        return res.sendStatus(200);
+      }
 
       try {
         const imagePrompt = `Веселе ілюстроване зображення до цього українського жарту без тексту: ${joke}`;
         const imageUrl = await generateImage(imagePrompt);
 
         await axios.post(`${TELEGRAM_API}/sendPhoto`, {
-          chat_id: chatId,
+          chat_id,
           photo: imageUrl,
           caption: joke,
         });
       } catch (err) {
         console.error('Image generation error:', err.response?.data || err.message || err);
         await axios.post(`${TELEGRAM_API}/sendMessage`, {
-          chat_id: chatId,
+          chat_id,
           text: 'На жаль, не вдалося згенерувати зображення 😢 Але жарт залишається 😊',
         });
       }
@@ -108,7 +108,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
     return res.sendStatus(200);
   }
-  
+
   const message = body.message;
   if (!message || !message.text) {
     console.log('No message or text found');
@@ -121,7 +121,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
   if (words.length !== 3) {
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: chatId,
+      chat_id,
       text: 'Будь ласка, надішліть рівно три слова для створення жарту 😊',
     });
     return res.sendStatus(200);
@@ -134,18 +134,18 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
     const joke = await chatWithGPT(jokePrompt);
     console.log('Received joke:', joke);
 
-    const encodedJoke = encodeData(joke);
+    const id = Date.now().toString(); // простий унікальний ID
+    jokesCache.set(id, joke);
 
-    // Надсилаємо жарт із кнопкою, щоб картинку генерували пізніше вручну
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: chatId,
+      chat_id,
       text: joke,
       reply_markup: {
         inline_keyboard: [
           [
             {
               text: '🖼 Згенерувати зображення',
-              callback_data: `generate_image:${encodedJoke}`,
+              callback_data: `generate_image:${id}`,
             },
           ],
         ],
@@ -154,7 +154,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   } catch (err) {
     console.error('Telegram bot error while creating joke:', err.response?.data || err.message || err);
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: chatId,
+      chat_id,
       text: 'На жаль, виникла помилка під час створення жарту',
     });
   }
