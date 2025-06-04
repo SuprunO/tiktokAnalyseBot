@@ -1,4 +1,4 @@
-// Telegram + OpenAI + Express server
+// Telegram + OpenAI + Express server with switchable image generator (Stable Diffusion by default)
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -9,6 +9,8 @@ app.use(bodyParser.json());
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const STABILITY_API_KEY = process.env.STABILITY_API_KEY;
+const IMAGE_GENERATOR = 'stable'; // 'dalle' or 'stable'
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
 // === GPT Joke Generator ===
@@ -30,14 +32,14 @@ async function chatWithGPT(prompt) {
 }
 
 // === Image Generator with DALL·E ===
-async function generateImage(prompt) {
+async function generateImageDalle(prompt) {
   const response = await axios.post(
     'https://api.openai.com/v1/images/generations',
     {
       model: "dall-e-3",
       prompt: prompt,
       n: 1,
-      size: "512x512"
+      size: "1024x1024"
     },
     {
       headers: {
@@ -49,77 +51,86 @@ async function generateImage(prompt) {
   return response.data.data[0].url;
 }
 
-// === Public API Endpoint ===
-app.get('/chat', async (req, res) => {
-  const prompt = req.query.prompt || 'Tell me a joke';
-  try {
-    const reply = await chatWithGPT(prompt);
-    res.json({ reply });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to generate response.' });
+// === Image Generator with Stable Diffusion (via Stability AI) ===
+async function generateImageStable(prompt) {
+  const response = await axios.post(
+    'https://api.stability.ai/v1/generation/stable-diffusion-v1-5/text-to-image',
+    {
+      text_prompts: [{ text: prompt }],
+      cfg_scale: 7,
+      height: 512,
+      width: 512,
+      samples: 1,
+      steps: 30
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${STABILITY_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+  const base64 = response.data.artifacts[0].base64;
+  return `data:image/png;base64,${base64}`;
+}
+
+// === Unified Image Generator ===
+async function generateImage(prompt) {
+  if (IMAGE_GENERATOR === 'dalle') {
+    return await generateImageDalle(prompt);
+  } else {
+    return await generateImageStable(prompt);
   }
-});
+}
 
 // === Telegram Webhook Handler ===
 app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   const message = req.body.message;
-  const callbackQuery = req.body.callback_query;
+  if (!message || !message.text) return res.sendStatus(200);
 
-  const processInput = async (chatId, textInput) => {
-    const words = textInput.trim().split(/\s+/);
-    if (words.length !== 3) {
-      await axios.post(`${TELEGRAM_API}/sendMessage`, {
-        chat_id: chatId,
-        text: 'Будь ласка, надішліть рівно три слова для створення жарту 😊'
-      });
-      return;
-    }
+  const chatId = message.chat.id;
+  const userInput = message.text;
+  const words = userInput.trim().split(/\s+/);
 
-    const prompt = `Придумай короткий, дотепний жарт українською мовою, використовуючи рівно ці три слова: ${textInput}. Жарт має бути зрозумілим, веселим і не образливим. Уникай тем про політику, релігію, національність, фізичні вади та чорний гумор. Формат — як анекдот або одно-рядковий жарт.`;
-
-    try {
-      const joke = await chatWithGPT(prompt);
-
-      const imagePrompt = `Уяви цей жарт як кольорову ілюстрацію в стилі Pixar. Без тексту, з простим фоном. "${joke}"`;
-      const imageUrl = await generateImage(imagePrompt);
-
-      await axios.post(`${TELEGRAM_API}/sendPhoto`, {
-        chat_id: chatId,
-        photo: imageUrl,
-        caption: joke,
-        reply_markup: {
-          inline_keyboard: [[
-            {
-              text: 'Спробувати ще раз 😄',
-              callback_data: textInput
-            }
-          ]]
-        }
-      });
-    } catch (err) {
-      console.error('Telegram bot error:', err?.response?.data || err.message);
-      await axios.post(`${TELEGRAM_API}/sendMessage`, {
-        chat_id: chatId,
-        text: 'На жаль, виникла помилка під час створення жарту або картинки 😢'
-      });
-    }
-  };
-
-  // === Handle callback ===
-  if (callbackQuery) {
-    const chatId = callbackQuery.message.chat.id;
-    const textInput = callbackQuery.data;
-    await processInput(chatId, textInput);
+  if (words.length !== 3) {
+    await axios.post(`${TELEGRAM_API}/sendMessage`, {
+      chat_id: chatId,
+      text: 'Будь ласка, надішліть рівно три слова для створення жарту 😊'
+    });
     return res.sendStatus(200);
   }
 
-  // === Handle message ===
-  if (message?.text) {
-    const chatId = message.chat.id;
-    const textInput = message.text;
-    await processInput(chatId, textInput);
-    return res.sendStatus(200);
+  const jokePrompt = `Склади кумедний жарт українською мовою, використовуючи ці три слова: ${userInput}`;
+  try {
+    const joke = await chatWithGPT(jokePrompt);
+    const imagePrompt = `Веселе ілюстроване зображення до цього українського жарту без тексту: ${joke}`;
+    const imageUrl = await generateImage(imagePrompt);
+
+    if (imageUrl.startsWith('data:image')) {
+      // If base64, use Telegram's sendPhoto with file upload
+      const buffer = Buffer.from(imageUrl.split(',')[1], 'base64');
+      const FormData = require('form-data');
+      const form = new FormData();
+      form.append('chat_id', chatId);
+      form.append('caption', joke);
+      form.append('photo', buffer, 'image.png');
+
+      await axios.post(`${TELEGRAM_API}/sendPhoto`, form, {
+        headers: form.getHeaders()
+      });
+    } else {
+      await axios.post(`${TELEGRAM_API}/sendPhoto`, {
+        chat_id: chatId,
+        photo: imageUrl,
+        caption: joke
+      });
+    }
+  } catch (err) {
+    console.error('Telegram bot error:', err);
+    await axios.post(`${TELEGRAM_API}/sendMessage`, {
+      chat_id: chatId,
+      text: 'На жаль, виникла помилка під час створення жарту або зображення 😢'
+    });
   }
 
   res.sendStatus(200);
