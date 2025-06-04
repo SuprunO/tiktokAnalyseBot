@@ -34,22 +34,33 @@ async function chatWithGPT(prompt) {
 // === Image Generator with DALL·E ===
 async function generateImage(jokeText) {
   const stylePrompt = `Уяви цей жарт як кольорову ілюстрацію в стилі Pixar. Без тексту, з простим фоном. "${jokeText}"`;
-  const response = await axios.post(
-    'https://api.openai.com/v1/images/generations',
-    {
-      model: "dall-e-3",
-      prompt: stylePrompt,
-      n: 1,
-      size: "512x512",
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/images/generations',
+      {
+        model: "dall-e-3",
+        prompt: stylePrompt,
+        n: 1,
+        size: "512x512"
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
       }
+    );
+
+    const imageUrl = response.data?.data?.[0]?.url;
+    if (!imageUrl) {
+      throw new Error('DALL·E did not return a valid image URL');
     }
-  );
-  return response.data.data[0].url;
+
+    return imageUrl;
+  } catch (error) {
+    console.error('❌ DALL·E image generation failed:', error.response?.data || error.message);
+    throw error;
+  }
 }
 
 // === Telegram Webhook Handler ===
