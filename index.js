@@ -117,6 +117,17 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
   const chatId = message.chat.id;
   const userInput = message.text.trim();
+
+  // --- Окрема обробка команди /start ---
+  if (userInput === '/start') {
+    await axios.post(`${TELEGRAM_API}/sendMessage`, {
+      chat_id: chatId,
+      text: 'Привіт! Надішли мені рівно три слова, і я складу кумедний жарт українською 😊',
+    });
+    return res.sendStatus(200);
+  }
+  // --- Кінець обробки /start ---
+
   const words = userInput.split(/\s+/);
 
   if (words.length !== 3) {
