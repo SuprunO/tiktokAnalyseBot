@@ -14,11 +14,11 @@ app.use(bodyParser.json());
 
 // === Scrape TikTok trends ===
 async function scrapeTikTokTrends({ minGrowth = 200 } = {}) {
-  const browser = await puppeteer.launch({
-    args: chromium.args,
-    executablePath: await chromium.executablePath,
-    headless: chromium.headless,
-  });
+const browser = await puppeteer.launch({
+  args: chromium.args,
+  executablePath: process.env.AWS_EXECUTION_ENV ? await chromium.executablePath : '/usr/bin/chromium-browser',
+  headless: true,
+});
 
   const page = await browser.newPage();
   await page.setUserAgent('Mozilla/5.0');
