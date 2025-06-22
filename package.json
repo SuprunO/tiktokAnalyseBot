@@ -16,6 +16,7 @@
     "express": "^5.1.0",
     "form-data": "^4.0.2",
     "node-telegram-bot-api": "^0.66.0",
+    "pupeteer": "^0.0.1",
     "puppeteer": "^24.10.2",
     "puppeteer-core": "^24.10.2"
   }
