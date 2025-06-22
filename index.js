@@ -3,204 +3,133 @@ const express = require('express');
 const axios = require('axios');
 const chromium = require('chrome-aws-lambda');
 const puppeteer = require('puppeteer-core');
-const bodyParser = require('body-parser');
-
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
-const PORT = process.env.PORT || 3000;
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 
-// Environment detection
 const isProduction = process.env.NODE_ENV === 'production';
 
-// ================== IMPROVED SCRAPER ==================
-async function scrapeTikTokTrends({ minGrowth = 200, keyword = '' } = {}) {
+// Improved Scraper with Error Handling
+async function scrapeTikTokTrends({ keyword = '' } = {}) {
   let browser;
   try {
-    // Enhanced browser configuration
-    const options = {
+    browser = await puppeteer.launch({
       args: [
         ...chromium.args,
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--single-process',
-        '--no-zygote'
+        '--single-process'
       ],
-      headless: true,
-      executablePath: isProduction
-        ? await chromium.executablePath
-        : process.env.CHROME_PATH || '/usr/bin/google-chrome',
-      ignoreHTTPSErrors: true
-    };
+      executablePath: isProduction 
+        ? await chromium.executablePath 
+        : '/usr/bin/chromium-browser',
+      headless: "new",
+    });
 
-    browser = await puppeteer.launch(options);
     const page = await browser.newPage();
-
-    // Enhanced stealth and headers
+    
+    // Stealth Mode
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
     await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9'
+      'Accept-Language': 'en-US,en;q=0.9',
     });
 
-    // Configure page behavior
-    await page.setViewport({ width: 1280, height: 800 });
-    await page.setDefaultNavigationTimeout(90000);
+    // Navigate with retries
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        await page.goto('https://ads.tiktok.com/business/creativecenter/search-trends/', {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000,
+        });
+        break;
+      } catch (err) {
+        retries--;
+        if (retries === 0) throw err;
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
 
-    console.log('Navigating to TikTok Trends...');
-    await page.goto('https://ads.tiktok.com/business/creativecenter/search-trends/', {
-      waitUntil: 'networkidle2',
-      timeout: 90000
-    });
-
-    // Improved auto-scroll with error handling
-    await autoScroll(page);
-
-    console.log('Extracting trends...');
+    // Safer scraping
     const trends = await page.evaluate(() => {
-      const results = [];
-      document.querySelectorAll('.trend-card').forEach(card => {
-        try {
-          const title = card.querySelector('.title')?.textContent?.trim() || '';
-          const growthText = card.querySelector('.rate')?.textContent || '0';
-          const growth = parseInt(growthText.replace(/\D/g, '')) || 0;
-          const hasLackOfContent = card.textContent.includes('Lack of content');
-          const updatedAt = card.querySelector('.desc')?.textContent?.trim() || '';
-          
-          if (title) {
-            results.push({ title, growth, updatedAt, lackOfContent: hasLackOfContent });
-          }
-        } catch (e) {
-          console.error('Error parsing card:', e);
-        }
-      });
-      return results;
+      return Array.from(document.querySelectorAll('.trend-card'))
+        .slice(0, 15) // Limit to 15 cards
+        .map(card => {
+          return {
+            title: card.querySelector('.title')?.textContent?.trim() || '',
+            growth: parseInt(card.querySelector('.rate')?.textContent?.replace(/\D/g, '') || '0'),
+            lackOfContent: card.textContent.includes('Lack of content'),
+          };
+        })
+        .filter(t => t.lackOfContent && t.title);
     });
 
-    // Enhanced filtering
-    return trends
-      .filter(t => t.lackOfContent)
-      .filter(t => t.growth >= minGrowth)
-      .filter(t => !keyword || t.title.toLowerCase().includes(keyword.toLowerCase()))
-      .slice(0, 10); // Limit to 10 results
+    return trends;
 
   } catch (err) {
-    console.error('❌ Critical scraping error:', err);
-    throw new Error(`Scraping failed: ${err.message}`);
+    console.error('Scraping Error:', err);
+    throw new Error('Failed to fetch trends. TikTok may have blocked the request.');
   } finally {
-    if (browser) {
-      await browser.close().catch(e => console.error('Browser close error:', e));
-    }
+    if (browser) await browser.close().catch(console.error);
   }
 }
 
-// ================== IMPROVED AUTOSCROLL ==================
-async function autoScroll(page) {
-  await page.evaluate(async () => {
-    await new Promise((resolve) => {
-      let totalHeight = 0;
-      const distance = 300;
-      const maxScrolls = 10;
-      let scrollCount = 0;
-      
-      const timer = setInterval(() => {
-        const scrollHeight = document.body.scrollHeight;
-        window.scrollBy(0, distance);
-        totalHeight += distance;
-        scrollCount++;
-
-        if (totalHeight >= scrollHeight || scrollCount >= maxScrolls) {
-          clearInterval(timer);
-          resolve();
-        }
-      }, 1000);
-    });
-  });
-}
-
-// ================== TELEGRAM HANDLER ==================
-app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
+// Telegram Handler with Retries
+app.post(`/webhook/${process.env.TELEGRAM_TOKEN}`, async (req, res) => {
   try {
     const { message } = req.body;
-    if (!message || !message.text) return res.sendStatus(200);
+    if (!message?.text) return res.sendStatus(200);
 
     const chatId = message.chat.id;
     const text = message.text.trim();
 
-    if (text === '/start') {
-      await sendTelegramMessage(chatId, 
-        `👋 Hi! I'm a TikTok trend finder bot. Send /trends [keyword] to find underserved trends.\n\n` +
-        `Example: /trends cooking`
-      );
-      return res.sendStatus(200);
-    }
-
     if (text.startsWith('/trends')) {
       const keyword = text.split(' ').slice(1).join(' ').trim();
       
-      await sendTelegramMessage(chatId, 
-        `🔍 Searching for TikTok trends with "Lack of Content"...\n` +
-        `${keyword ? `Keyword: "${keyword}"` : 'No keyword filter'}`,
-        { parse_mode: 'HTML' }
-      );
+      // Immediate response to prevent timeout
+      await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendMessage`, {
+        chat_id: chatId,
+        text: `🔍 Searching for "${keyword || 'all'}" trends...`,
+      });
 
       const trends = await scrapeTikTokTrends({ keyword });
       
       if (!trends.length) {
-        await sendTelegramMessage(chatId, 
-          '❌ No underserved trends found. Try a different keyword or check back later.'
-        );
+        await sendMessage(chatId, 'No underserved trends found 😕');
         return res.sendStatus(200);
       }
 
-      const message = trends.map((t, i) => 
-        `📈 <b>Trend ${i+1}: ${t.title}</b>\n` +
-        `⬆️ Growth: ${t.growth}%\n` +
-        `🕒 Updated: ${t.updatedAt}\n` +
-        `#${t.title.replace(/\s+/g, '').slice(0, 10)}`
+      const response = trends.slice(0, 5).map(t => 
+        `🔥 <b>${t.title}</b>\n⬆️ ${t.growth}% growth`
       ).join('\n\n');
 
-      await sendTelegramMessage(chatId, message, { parse_mode: 'HTML' });
-      return res.sendStatus(200);
+      await sendMessage(chatId, response, { parse_mode: 'HTML' });
+    } else {
+      await sendMessage(chatId, 'Send /trends [keyword] to search');
     }
 
-    await sendTelegramMessage(chatId, 
-      '❌ Unknown command. Use /trends [keyword] to search for trends.'
-    );
-    return res.sendStatus(200);
+    res.sendStatus(200);
   } catch (err) {
-    console.error('Telegram handler error:', err);
-    await sendTelegramMessage(req.body.message.chat.id, 
-      '⚠️ An error occurred. Please try again later.'
-    );
-    return res.sendStatus(200);
+    console.error('Handler Error:', err);
+    await sendMessage(req.body.message?.chat?.id, '⚠️ Please try again later');
+    res.sendStatus(200);
   }
 });
 
-// ================== HELPER FUNCTIONS ==================
-async function sendTelegramMessage(chatId, text, options = {}) {
+// Robust Message Sender
+async function sendMessage(chatId, text, options = {}) {
   try {
-    await axios.post(`${TELEGRAM_API}/sendMessage`, {
+    await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendMessage`, {
       chat_id: chatId,
       text,
-      ...options
+      ...options,
     });
   } catch (err) {
-    console.error('Telegram API error:', err.response?.data || err.message);
+    console.error('Telegram API Error:', err.response?.data || err.message);
   }
 }
 
-// ================== SERVER START ==================
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  if (!isProduction) {
-    console.log('Testing scraper locally...');
-    scrapeTikTokTrends({ keyword: 'food' })
-      .then(trends => console.log('Test results:', trends))
-      .catch(err => console.error('Test failed:', err));
-  }
+app.listen(process.env.PORT || 3000, () => {
+  console.log('Bot running');
 });
