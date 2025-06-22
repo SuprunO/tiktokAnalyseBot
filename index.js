@@ -12,13 +12,17 @@ const PORT = process.env.PORT || 3000;
 const app = express();
 app.use(bodyParser.json());
 
+const isServerless = !!process.env.AWS_EXECUTION_ENV || !!process.env.IS_RENDER;
+
 // === Scrape TikTok trends ===
-async function scrapeTikTokTrends({ minGrowth = 200 } = {}) {
-const browser = await puppeteer.launch({
-  args: chromium.args,
-  executablePath: process.env.AWS_EXECUTION_ENV ? await chromium.executablePath : '/usr/bin/chromium-browser',
-  headless: true,
-});
+async function scrapeTikTokTrends({ minGrowth = 200, keyword = '' } = {}) {
+  const browser = await puppeteer.launch({
+    args: chromium.args,
+    executablePath: isServerless
+      ? await chromium.executablePath
+      : undefined, // локально Puppeteer сам знає шлях
+    headless: true,
+  });
 
   const page = await browser.newPage();
   await page.setUserAgent('Mozilla/5.0');
@@ -43,7 +47,12 @@ const browser = await puppeteer.launch({
   });
 
   await browser.close();
-  return trends.filter(t => t.lackOfContent && t.growth >= minGrowth);
+
+  return trends.filter(t =>
+    t.lackOfContent &&
+    t.growth >= minGrowth &&
+    (!keyword || t.title.toLowerCase().includes(keyword.toLowerCase()))
+  );
 }
 
 async function autoScroll(page) {
@@ -75,15 +84,19 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
   try {
     if (text === '/start') {
-      return sendTelegramMessage(chatId, `👋 Привіт! Я бот, який знаходить TikTok тренди з тегом "Lack of content". Напиши /trendideas щоб отримати ідеї!`);
+      return sendTelegramMessage(chatId, `👋 Привіт! Я бот, який знаходить TikTok тренди з тегом "Lack of content". Напиши /trendideas [тема] щоб отримати ідеї!`);
     }
 
-    if (text === '/trendideas') {
-      await sendTelegramMessage(chatId, `⏳ Збираю тренди з TikTok Creative Center...`);
+    if (text.startsWith('/trendideas')) {
+      const [, ...rest] = text.split(' ');
+      const keyword = rest.join(' ').trim();
 
-      const trends = await scrapeTikTokTrends();
+      await sendTelegramMessage(chatId, `⏳ Шукаю тренди за запитом: <b>${keyword || 'всі'}</b>...`, { parse_mode: 'HTML' });
+
+      const trends = await scrapeTikTokTrends({ keyword });
+
       if (trends.length === 0) {
-        return sendTelegramMessage(chatId, `😕 Не знайдено трендів з тегом "Lack of content".`);
+        return sendTelegramMessage(chatId, `😕 Не знайдено трендів з тегом "Lack of content" за запитом "${keyword}"`);
       }
 
       const reply = trends.slice(0, 5).map(t =>
@@ -95,7 +108,7 @@ app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
 
     return sendTelegramMessage(chatId, `🤖 Невідома команда. Напиши /trendideas або /start`);
   } catch (err) {
-    console.error('❌ Деталі помилки:', err);
+    console.error('❌ Помилка:', err);
     return sendTelegramMessage(chatId, `❌ Помилка: ${err.message}`);
   } finally {
     res.sendStatus(200);
