@@ -1,142 +1,109 @@
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
-const bodyParser = require('body-parser');
 const puppeteer = require('puppeteer');
+const bodyParser = require('body-parser');
+
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
+const PORT = process.env.PORT || 3000;
 
 const app = express();
 app.use(bodyParser.json());
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
-
-// === GPT Chat Handler ===
-async function chatWithGPT(prompt) {
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: prompt }],
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    }
-  );
-  return response.data.choices[0].message.content.trim();
-}
-
-// === TikTok Trends Scraper ===
-async function scrapeTrends(niche = 'all') {
+// === Trend Scraper ===
+async function scrapeTikTokTrends({ minGrowth = 200 } = {}) {
   const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
+
+  await page.setUserAgent('Mozilla/5.0');
   await page.goto('https://ads.tiktok.com/business/creativecenter/search-trends/', {
     waitUntil: 'networkidle2',
-    timeout: 60000
+    timeout: 60000,
   });
 
-  await page.waitForSelector('.trend-card'); // зачекати поки з'являться дані
   await autoScroll(page);
 
   const trends = await page.evaluate(() => {
-    const items = Array.from(document.querySelectorAll('.trend-card'));
-    return items.map(el => {
-      const title = el.querySelector('.title')?.textContent?.trim();
-      const growth = el.querySelector('.rate')?.textContent?.trim();
-      const updatedAt = el.querySelector('.desc')?.textContent?.trim();
-      const hasLackOfContent = el.textContent.includes('Lack of content');
+    const cards = Array.from(document.querySelectorAll('.trend-card'));
+    return cards.map(card => {
+      const title = card.querySelector('.title')?.textContent?.trim();
+      const growthText = card.querySelector('.rate')?.textContent || '';
+      const growth = parseInt(growthText.replace(/\D/g, '')) || 0;
+      const hasLackOfContent = card.textContent.includes('Lack of content');
+      const updatedAt = card.querySelector('.desc')?.textContent?.trim();
       return { title, growth, updatedAt, lackOfContent: hasLackOfContent };
     });
   });
 
   await browser.close();
-  return trends.filter(t => t.lackOfContent).slice(0, 5); // топ-5
+  return trends.filter(t => t.lackOfContent && t.growth >= minGrowth);
 }
 
 async function autoScroll(page) {
   await page.evaluate(async () => {
     await new Promise((resolve) => {
       let totalHeight = 0;
-      const distance = 100;
+      const distance = 300;
       const timer = setInterval(() => {
         const scrollHeight = document.body.scrollHeight;
         window.scrollBy(0, distance);
         totalHeight += distance;
+
         if (totalHeight >= scrollHeight) {
           clearInterval(timer);
           resolve();
         }
-      }, 200);
+      }, 300);
     });
   });
 }
 
-// === Telegram Webhook ===
+// === Telegram Handler ===
 app.post(`/webhook/${TELEGRAM_TOKEN}`, async (req, res) => {
   const message = req.body.message;
   if (!message || !message.text) return res.sendStatus(200);
 
   const chatId = message.chat.id;
-  const userText = message.text.trim();
+  const text = message.text.trim();
 
   try {
-    if (userText.startsWith('/trends')) {
-      const niche = userText.split(' ')[1] || 'beauty';
-      await axios.post(`${TELEGRAM_API}/sendMessage`, {
-        chat_id: chatId,
-        text: `🔍 Шукаю тренди TikTok для ніші "${niche}"...`
-      });
+    if (text === '/start') {
+      return sendTelegramMessage(chatId, `👋 Привіт! Надішли /trendideas щоб отримати топ TikTok тренди з малою кількістю контенту.`);
+    }
 
-      const trends = await scrapeTrends(niche);
+    if (text === '/trendideas') {
+      await sendTelegramMessage(chatId, `🔍 Збираю TikTok тренди... Зачекай кілька секунд`);
 
-      let replyText = `🔥 Тренди в ніші *${niche}*\n\n`;
-
-      for (const trend of trends) {
-        const idea = await chatWithGPT(`Give a short TikTok video idea for trend: "${trend.title}" in the niche "${niche}"`);
-        replyText += `🟢 *${trend.title}* (${trend.growth})\n💡 ${idea}\n\n`;
+      const trends = await scrapeTikTokTrends();
+      if (trends.length === 0) {
+        return sendTelegramMessage(chatId, `😕 Не знайдено актуальних трендів з тегом "Lack of content".`);
       }
 
-      await axios.post(`${TELEGRAM_API}/sendMessage`, {
-        chat_id: chatId,
-        text: replyText,
-        parse_mode: 'Markdown'
-      });
+      const reply = trends.slice(0, 5).map(t =>
+        `🔥 <b>${t.title}</b>\n⬆️ ${t.growth}%\n🕒 ${t.updatedAt}`
+      ).join('\n\n');
 
-    } else {
-      // Default GPT reply
-      const reply = await chatWithGPT(userText);
-      await axios.post(`${TELEGRAM_API}/sendMessage`, {
-        chat_id: chatId,
-        text: reply
-      });
+      return sendTelegramMessage(chatId, reply, { parse_mode: 'HTML' });
     }
-  } catch (err) {
-    console.error('Telegram bot error:', err);
-    await axios.post(`${TELEGRAM_API}/sendMessage`, {
-      chat_id: chatId,
-      text: '😔 Виникла помилка. Спробуйте пізніше.'
-    });
-  }
 
-  res.sendStatus(200);
-});
-
-// === Express Test Endpoint ===
-app.get('/chat', async (req, res) => {
-  const prompt = req.query.prompt || 'Розкажи смішний жарт украінською мовою';
-  try {
-    const reply = await chatWithGPT(prompt);
-    res.json({ reply });
+    return sendTelegramMessage(chatId, `🤖 Команда не розпізнана. Напиши /trendideas або /start`);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to generate response.' });
+    return sendTelegramMessage(chatId, `❌ Помилка при обробці запиту.`);
+  } finally {
+    res.sendStatus(200);
   }
 });
 
-const PORT = process.env.PORT || 3000;
+async function sendTelegramMessage(chatId, text, options = {}) {
+  return axios.post(`${TELEGRAM_API}/sendMessage`, {
+    chat_id: chatId,
+    text,
+    ...options
+  });
+}
+
 app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
