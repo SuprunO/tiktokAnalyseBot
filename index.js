@@ -120,6 +120,11 @@ app.get('/privacy', (req, res) => {
   res.sendFile(path.join(__dirname, 'privacy.html'));
 });
 
+app.get('/tiktok-verification.txt', (req, res) => {
+  res.type('text/plain');
+  res.send('tiktok-developers-site-verification=Nsg69zyjl1SadkryiZnUjnBPsnvEbHgW');
+});
+
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
