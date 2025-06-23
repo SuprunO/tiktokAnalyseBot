@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const puppeteer = require('puppeteer'); // Full puppeteer with built-in Chromium
+const path = require('path');
 
 const app = express();
 app.use(express.json());
