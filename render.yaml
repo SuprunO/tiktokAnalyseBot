@@ -1,0 +1,16 @@
+services:
+  - type: worker          # Telegram bot is a background worker, not a web server
+    name: tiktok-telegram-bot
+    env: node
+    plan: starter        # Choose your plan
+    buildCommand: |
+      apt-get update && apt-get install -y \
+        libnss3 libatk1.0-0 libatk-bridge2.0-0 libx11-xcb1 \
+        libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2 \
+        libpangocairo-1.0-0 libpango-1.0-0 libgtk-3-0 libcups2 \
+        libdrm2 libxshmfence1 libxfixes3
+      npm install
+    startCommand: node index.js
+    envVars:
+      - key: TELEGRAM_TOKEN
+        fromSecret: TELEGRAM_TOKEN

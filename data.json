@@ -1,0 +1,65 @@
+[
+  {
+    "rank": "1",
+    "keyword": "fitness",
+    "popularity": "52",
+    "popularityChange": "127.27%",
+    "ctr": "1.09%",
+    "cvr": "8.11%",
+    "cpa": "12.70 USD"
+  },
+  {
+    "rank": "2",
+    "keyword": "fitness center",
+    "popularity": "44",
+    "popularityChange": "56.72%",
+    "ctr": "0.47%",
+    "cvr": "3.72%",
+    "cpa": "48.20 USD"
+  },
+  {
+    "rank": "3",
+    "keyword": "fitness #gym",
+    "popularity": "27",
+    "popularityChange": "105.88%",
+    "ctr": "0.43%",
+    "cvr": "10.31%",
+    "cpa": "24.80 USD"
+  },
+  {
+    "rank": "4",
+    "keyword": "fitness #workout",
+    "popularity": "34",
+    "popularityChange": "91.18%",
+    "ctr": "1.23%",
+    "cvr": "9.77%",
+    "cpa": "14.20 USD"
+  },
+  {
+    "rank": "5",
+    "keyword": "made fitness plan",
+    "popularity": "29",
+    "popularityChange": "82.14%",
+    "ctr": "1.02%",
+    "cvr": "1.12%",
+    "cpa": "108 USD"
+  },
+  {
+    "rank": "6",
+    "keyword": "start your fitness journey",
+    "popularity": "29",
+    "popularityChange": "81.48%",
+    "ctr": "1.50%",
+    "cvr": "3.81%",
+    "cpa": "87.10 USD"
+  },
+  {
+    "rank": "7",
+    "keyword": "crush your fitness goals",
+    "popularity": "27",
+    "popularityChange": "150.00%",
+    "ctr": "0.55%",
+    "cvr": "",
+    "cpa": ""
+  }
+]
