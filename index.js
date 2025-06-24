@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 const TelegramBot = require('node-telegram-bot-api');
-
+require('dotenv').config();
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 if (!TELEGRAM_TOKEN) {
   console.error('Please set TELEGRAM_TOKEN environment variable');
@@ -22,6 +22,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
     waitUntil: 'networkidle',
   });
 
+  await page.waitForTimeout(15000); // wait 5 seconds just in case
   await page.waitForSelector('input[placeholder="Search by keyword"]');
   await page.fill('input[placeholder="Search by keyword"]', keyword);
 

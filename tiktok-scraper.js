@@ -1,37 +1,35 @@
 const { chromium } = require('playwright');
-const fs = require('fs');
 
 (async () => {
+  const keyword = process.argv[2] || 'fitness'; // Use CLI argument or fallback
+
   const browser = await chromium.launch({
-    headless: false, // show browser to observe
-    slowMo: 100, // slow down for demo
+    headless: false,      // 👈 Show browser
+    slowMo: 100,          // 👈 Slow down for easier debugging
+    devtools: true        // 👈 Optional: open DevTools
   });
 
   const page = await browser.newPage();
+
   await page.goto('https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en', {
-    waitUntil: 'networkidle',
+    waitUntil: 'networkidle'
   });
 
-  // Wait for search input, fill 'fitness'
-  await page.waitForSelector('input[placeholder="Search by keyword"]');
-  await page.fill('input[placeholder="Search by keyword"]', 'fitness');
+  await page.waitForTimeout(10000); // Wait for dynamic content to load
 
-  // Click search button
+  await page.waitForSelector('input[placeholder="Search by keyword"]', { timeout: 30000 });
+  await page.fill('input[placeholder="Search by keyword"]', keyword);
+
   await page.click('[data-testid="cc_commonCom_autoComplete_seach"]');
 
-  // Wait for table body to appear
-  await page.waitForSelector('.byted-Table-Body', { timeout: 15000 });
+  await page.waitForSelector('.byted-Table-Body', { timeout: 20000 });
 
-  // Extract data from table rows
   const data = await page.evaluate(() => {
-    // The container with all rows
     const tableBody = document.querySelector('.byted-Table-Body');
     if (!tableBody) return [];
 
-    // Each row is a 'tr' inside the table body
     const rows = Array.from(tableBody.querySelectorAll('tr'));
 
-    // Map each row to an object with the expected columns
     return rows.map(row => {
       const cells = Array.from(row.querySelectorAll('td')).map(td => td.innerText.trim());
 
@@ -47,9 +45,8 @@ const fs = require('fs');
     });
   });
 
-  // Save data to JSON file
-  fs.writeFileSync('data.json', JSON.stringify(data, null, 2));
-  console.log('✅ Data saved to data.json');
+  console.log(`\n🔍 Results for keyword: "${keyword}"`);
+  console.table(data.slice(0, 10)); // Show first 10 results
 
   await browser.close();
 })();
