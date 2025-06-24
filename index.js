@@ -46,29 +46,39 @@ async function scrapeTikTokKeywordInsights(keyword) {
     }
   );
 
-  let found = false;
-  for (let i = 0; i < 3; i++) {
-    try {
-      await page.goto(
-        "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
-        {
-          waitUntil: "networkidle",
-          timeout: 60000,
-        }
-      );
-
-      await page.waitForSelector('input[placeholder="Search by keyword"]', {
+let found = false;
+for (let i = 0; i < 3; i++) {
+  try {
+    await page.goto(
+      "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
+      {
+        waitUntil: "networkidle",
         timeout: 60000,
-      });
-      found = true;
-      break;
-    } catch (err) {
-      console.log(`Try ${i + 1}: selector not found yet, retrying...`);
-    }
+      }
+    );
+
+    await page.waitForSelector('input[placeholder="Search by keyword"]', {
+      timeout: 60000,
+    });
+
+    found = true;
+    break;
+
+  } catch (err) {
+    console.log(`Try ${i + 1}: selector not found yet, retrying...`);
+    
+    // ✅ Dump partial HTML for debugging
+    const html = await page.content();
+    console.log(`HTML snapshot (attempt ${i + 1}):\n`, html.slice(0, 1000));
+
+    await page.waitForTimeout(3000); // short delay before retry
   }
-  if (!found) {
-    throw new Error("Keyword input not found after multiple attempts");
-  }
+}
+
+if (!found) {
+  throw new Error('Keyword input not found after multiple attempts');
+}
+
   await page.fill('input[placeholder="Search by keyword"]', keyword);
 
   await page.click('[data-testid="cc_commonCom_autoComplete_seach"]');
