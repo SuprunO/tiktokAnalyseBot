@@ -10,7 +10,7 @@ if (!TELEGRAM_TOKEN) {
 }
 
 const PORT = process.env.PORT || 3000;
-const URL = process.env.RENDER_EXTERNAL_URL || 'https://your-render-url.onrender.com'; // Change this to your Render URL
+const URL = process.env.RENDER_EXTERNAL_URL || 'https://tiktokanalysebot.onrender.com'; // Change this to your Render URL
 
 // Create bot instance with webhook option (no polling!)
 const bot = new TelegramBot(TELEGRAM_TOKEN, { webHook: { port: PORT } });
