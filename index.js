@@ -1,18 +1,37 @@
 const { chromium } = require('playwright');
 const TelegramBot = require('node-telegram-bot-api');
+const express = require('express');
 require('dotenv').config();
+
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 if (!TELEGRAM_TOKEN) {
   console.error('Please set TELEGRAM_TOKEN environment variable');
   process.exit(1);
 }
 
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+const PORT = process.env.PORT || 3000;
+const URL = process.env.RENDER_EXTERNAL_URL || 'https://your-render-url.onrender.com'; // Change this to your Render URL
 
-// Your scraping function, parameterized by keyword
+// Create bot instance with webhook option (no polling!)
+const bot = new TelegramBot(TELEGRAM_TOKEN, { webHook: { port: PORT } });
+
+// Set Telegram webhook URL (Telegram will send updates here)
+bot.setWebHook(`${URL}/bot${TELEGRAM_TOKEN}`);
+
+// Create Express app
+const app = express();
+app.use(express.json());
+
+// Webhook endpoint to receive updates from Telegram
+app.post(`/bot${TELEGRAM_TOKEN}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+// Your scraping function (same as before)
 async function scrapeTikTokKeywordInsights(keyword) {
   const browser = await chromium.launch({
-    headless: true, // set false if you want to see browser
+    headless: true,
     slowMo: 100,
   });
 
@@ -22,7 +41,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
     waitUntil: 'networkidle',
   });
 
-  await page.waitForTimeout(15000); // wait 5 seconds just in case
+  await page.waitForTimeout(15000);
   await page.waitForSelector('input[placeholder="Search by keyword"]');
   await page.fill('input[placeholder="Search by keyword"]', keyword);
 
@@ -55,7 +74,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
   return data;
 }
 
-// Telegram bot message handler
+// Telegram message handler - same logic, but no polling; triggered by webhook updates
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const keyword = msg.text?.trim();
@@ -86,4 +105,8 @@ bot.on('message', async (msg) => {
     console.error('Error scraping TikTok:', error);
     bot.sendMessage(chatId, 'Sorry, an error occurred while fetching data. Please try again later.');
   }
+});
+
+app.listen(PORT, () => {
+  console.log(`Express server listening on port ${PORT}`);
 });
