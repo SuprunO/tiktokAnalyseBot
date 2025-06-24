@@ -1,11 +1,8 @@
 services:
   - type: web
     name: tiktokanalysebot
-    env: node
-    buildCommand: |
-      npm install
-      npx playwright install chromium
-    startCommand: node index.js
+    env: docker   # <-- MUST BE docker to use Dockerfile
+    startCommand: node index.js  # You can keep this or remove because CMD in Dockerfile runs this
     envVars:
       - key: TELEGRAM_TOKEN
         sync: false
