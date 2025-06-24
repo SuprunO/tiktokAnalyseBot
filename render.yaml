@@ -1,8 +1,7 @@
 services:
   - type: web
     name: tiktokanalysebot
-    env: docker   # <-- MUST BE docker to use Dockerfile
-    startCommand: node index.js  # You can keep this or remove because CMD in Dockerfile runs this
+    env: docker  # ✅ this enables Dockerfile usage
     envVars:
       - key: TELEGRAM_TOKEN
         sync: false
