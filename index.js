@@ -1,8 +1,7 @@
+const { chromium } = require("playwright");  // <-- import chromium directly
 const TelegramBot = require("node-telegram-bot-api");
 const express = require("express");
 require("dotenv").config();
-
-playwright.use(stealth());
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 if (!TELEGRAM_TOKEN) {
@@ -11,13 +10,12 @@ if (!TELEGRAM_TOKEN) {
 }
 
 const PORT = process.env.PORT || 3000;
-const URL =
-  process.env.RENDER_EXTERNAL_URL || "https://tiktokanalysebot.onrender.com";
+const URL = process.env.RENDER_EXTERNAL_URL || "https://tiktokanalysebot.onrender.com";
 
-// 🛑 Disable polling
+// Create bot instance with webhook option (no polling!)
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
-// ✅ Set webhook
+// Set Telegram webhook URL
 bot.setWebHook(`${URL}/bot${TELEGRAM_TOKEN}`).then(() => {
   console.log(`Webhook set to ${URL}/bot${TELEGRAM_TOKEN}`);
 });
@@ -35,8 +33,8 @@ app.post(`/bot${TELEGRAM_TOKEN}`, (req, res) => {
 });
 
 async function scrapeTikTokKeywordInsights(keyword) {
-  const browser = await playwright.chromium.launch({
-    headless: true,
+  const browser = await chromium.launch({
+    headless: true,  // keep headless for production
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
     slowMo: 50,
   });
@@ -69,7 +67,6 @@ async function scrapeTikTokKeywordInsights(keyword) {
       console.log(`Try ${i + 1}: selector not found yet, retrying...`);
       const html = await page.content();
       console.log(`HTML snapshot (attempt ${i + 1}):\n`, html.slice(0, 1000));
-      await page.screenshot({ path: `debug-attempt-${i + 1}.png` });
       await page.waitForTimeout(3000);
     }
   }

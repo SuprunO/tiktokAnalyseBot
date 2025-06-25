@@ -1,22 +1,20 @@
-# Base image with Chromium + dependencies
+# Use official Playwright base image with browsers pre-installed
 FROM mcr.microsoft.com/playwright:v1.43.1-jammy
 
-# Create working directory
 WORKDIR /app
 
-# Copy package files and install dependencies
+# Copy package files first to leverage caching
 COPY package*.json ./
+
+# Install dependencies (including playwright browsers)
 RUN npm install
 
-# Copy the rest of the app
+# Copy rest of your app code
 COPY . .
 
-# Ensure Playwright dependencies & Chromium are installed
-RUN npx playwright install chromium --with-deps
-
-# Default environment & port
+# Expose the port your app will run on
 ENV PORT=3000
 EXPOSE 3000
 
-# Start the bot
+# Start your app
 CMD ["node", "index.js"]

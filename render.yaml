@@ -2,11 +2,8 @@ services:
   - type: web
     name: tiktokanalysebot
     env: docker
-    plan: free
-    branch: main 
-    region: frankfurt 
     dockerfilePath: ./Dockerfile
-    autoDeploy: true
+    # Build & start commands are handled by the Dockerfile, so no need to specify here.
     envVars:
       - key: TELEGRAM_TOKEN
         sync: false
