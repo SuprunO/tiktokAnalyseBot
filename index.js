@@ -60,7 +60,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
       );
 
       // Optional: wait extra to ensure JS executes
-      await page.waitForTimeout(5000);
+      await page.waitForTimeout(20000);
 
       // Wait for the actual element
       await page.waitForSelector('input[placeholder="Search by keyword"]', {

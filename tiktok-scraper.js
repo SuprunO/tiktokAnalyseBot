@@ -15,7 +15,7 @@ const { chromium } = require('playwright');
     waitUntil: 'networkidle'
   });
 
-  await page.waitForTimeout(10000); // Wait for dynamic content to load
+  await page.waitForTimeout(30000); // Wait for dynamic content to load
 
   await page.waitForSelector('input[placeholder="Search by keyword"]', { timeout: 30000 });
   await page.fill('input[placeholder="Search by keyword"]', keyword);
