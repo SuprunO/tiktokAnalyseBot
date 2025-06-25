@@ -1,5 +1,3 @@
-const playwright = require("playwright-extra");
-const stealth = require("playwright-extra-plugin-stealth");
 const TelegramBot = require("node-telegram-bot-api");
 const express = require("express");
 require("dotenv").config();
