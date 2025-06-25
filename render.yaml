@@ -1,7 +1,12 @@
 services:
   - type: web
     name: tiktokanalysebot
-    env: docker  # ✅ this enables Dockerfile usage
+    env: docker
+    plan: free
+    branch: main # or your active branch
+    region: frankfurt # or your closest region
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
     envVars:
       - key: TELEGRAM_TOKEN
         sync: false

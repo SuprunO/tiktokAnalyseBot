@@ -1,21 +1,22 @@
-# ✅ Use official Playwright image with Chromium preinstalled
+# Base image with Chromium + dependencies
 FROM mcr.microsoft.com/playwright:v1.43.1-jammy
 
-# Set working directory
+# Create working directory
 WORKDIR /app
 
-# Copy only package.json first for better caching
+# Copy package files and install dependencies
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy the rest of your app
+# Copy the rest of the app
 COPY . .
 
-# Set environment
+# Ensure Playwright dependencies & Chromium are installed
+RUN npx playwright install chromium --with-deps
+
+# Default environment & port
 ENV PORT=3000
 EXPOSE 3000
 
-# Start your Telegram bot (adjust if you use another file)
+# Start the bot
 CMD ["node", "index.js"]
