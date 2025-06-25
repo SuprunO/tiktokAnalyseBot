@@ -39,12 +39,13 @@ async function scrapeTikTokKeywordInsights(keyword) {
     slowMo: 50,
   });
 
-  const page = await browser.newPage();
+const context = await browser.newContext({
+  userAgent:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117 Safari/537.36",
+  viewport: { width: 1366, height: 768 },
+});
 
-  await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117 Safari/537.36"
-  );
-  await page.setViewportSize({ width: 1366, height: 768 });
+const page = await context.newPage();
 
   let found = false;
   for (let i = 0; i < 3; i++) {
