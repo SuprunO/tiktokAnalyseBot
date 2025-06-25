@@ -1,7 +1,10 @@
-const { chromium } = require("playwright");
+const playwright = require("playwright-extra");
+const stealth = require("playwright-extra-plugin-stealth");
 const TelegramBot = require("node-telegram-bot-api");
 const express = require("express");
 require("dotenv").config();
+
+playwright.use(stealth());
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 if (!TELEGRAM_TOKEN) {
@@ -11,76 +14,74 @@ if (!TELEGRAM_TOKEN) {
 
 const PORT = process.env.PORT || 3000;
 const URL =
-  process.env.RENDER_EXTERNAL_URL || "https://tiktokanalysebot.onrender.com"; // Change this to your Render URL
+  process.env.RENDER_EXTERNAL_URL || "https://tiktokanalysebot.onrender.com";
 
-// Create bot instance with webhook option (no polling!)
-const bot = new TelegramBot(TELEGRAM_TOKEN);
+// 🛑 Disable polling
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
-// Set Telegram webhook URL (Telegram will send updates here)
-bot.setWebHook(`${URL}/bot${TELEGRAM_TOKEN}`);
+// ✅ Set webhook
+bot.setWebHook(`${URL}/bot${TELEGRAM_TOKEN}`).then(() => {
+  console.log(`Webhook set to ${URL}/bot${TELEGRAM_TOKEN}`);
+});
 
-// Create Express app
 const app = express();
 app.use(express.json());
 
-// Webhook endpoint to receive updates from Telegram
+app.get("/", (req, res) => {
+  res.send("Bot is running.");
+});
+
 app.post(`/bot${TELEGRAM_TOKEN}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
 
-// Your scraping function (same as before)
 async function scrapeTikTokKeywordInsights(keyword) {
-  const browser = await chromium.launch({
+  const browser = await playwright.chromium.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
-    slowMo: 100,
+    slowMo: 50,
   });
 
   const page = await browser.newPage();
 
-  await page.goto(
-    "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
-    {
-      waitUntil: "networkidle",
-    }
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117 Safari/537.36"
   );
+  await page.setViewportSize({ width: 1366, height: 768 });
 
-let found = false;
-for (let i = 0; i < 3; i++) {
-  try {
-    await page.goto(
-      "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
-      {
-        waitUntil: "networkidle",
+  let found = false;
+  for (let i = 0; i < 3; i++) {
+    try {
+      await page.goto(
+        "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
+        {
+          waitUntil: "networkidle",
+          timeout: 60000,
+        }
+      );
+
+      await page.waitForSelector('input[placeholder="Search by keyword"]', {
         timeout: 60000,
-      }
-    );
+      });
 
-    await page.waitForSelector('input[placeholder="Search by keyword"]', {
-      timeout: 60000,
-    });
-
-    found = true;
-    break;
-
-  } catch (err) {
-    console.log(`Try ${i + 1}: selector not found yet, retrying...`);
-    
-    // ✅ Dump partial HTML for debugging
-    const html = await page.content();
-    console.log(`HTML snapshot (attempt ${i + 1}):\n`, html.slice(0, 1000));
-
-    await page.waitForTimeout(3000); // short delay before retry
+      found = true;
+      break;
+    } catch (err) {
+      console.log(`Try ${i + 1}: selector not found yet, retrying...`);
+      const html = await page.content();
+      console.log(`HTML snapshot (attempt ${i + 1}):\n`, html.slice(0, 1000));
+      await page.screenshot({ path: `debug-attempt-${i + 1}.png` });
+      await page.waitForTimeout(3000);
+    }
   }
-}
 
-if (!found) {
-  throw new Error('Keyword input not found after multiple attempts');
-}
+  if (!found) {
+    await browser.close();
+    throw new Error("Keyword input not found after multiple attempts");
+  }
 
   await page.fill('input[placeholder="Search by keyword"]', keyword);
-
   await page.click('[data-testid="cc_commonCom_autoComplete_seach"]');
 
   await page.waitForSelector(".byted-Table-Body", { timeout: 15000 });
@@ -90,7 +91,6 @@ if (!found) {
     if (!tableBody) return [];
 
     const rows = Array.from(tableBody.querySelectorAll("tr"));
-
     return rows.map((row) => {
       const cells = Array.from(row.querySelectorAll("td")).map((td) =>
         td.innerText.trim()
@@ -112,7 +112,6 @@ if (!found) {
   return data;
 }
 
-// Telegram message handler - same logic, but no polling; triggered by webhook updates
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const keyword = msg.text?.trim();
