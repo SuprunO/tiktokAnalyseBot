@@ -1,4 +1,4 @@
-const { chromium } = require("playwright");  // <-- import chromium directly
+const { chromium } = require("playwright"); // <-- import chromium directly
 const TelegramBot = require("node-telegram-bot-api");
 const express = require("express");
 require("dotenv").config();
@@ -10,7 +10,8 @@ if (!TELEGRAM_TOKEN) {
 }
 
 const PORT = process.env.PORT || 3000;
-const URL = process.env.RENDER_EXTERNAL_URL || "https://tiktokanalysebot.onrender.com";
+const URL =
+  process.env.RENDER_EXTERNAL_URL || "https://tiktokanalysebot.onrender.com";
 
 // Create bot instance with webhook option (no polling!)
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
@@ -34,18 +35,25 @@ app.post(`/bot${TELEGRAM_TOKEN}`, (req, res) => {
 
 async function scrapeTikTokKeywordInsights(keyword) {
   const browser = await chromium.launch({
-    headless: true,  // keep headless for production
+    headless: false, // keep headless for production
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
     slowMo: 50,
   });
 
-const context = await browser.newContext({
-  userAgent:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117 Safari/537.36",
-  viewport: { width: 1366, height: 768 },
-});
+  const context = await browser.newContext({
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117 Safari/537.36",
+    javaScriptEnabled: true,
+    extraHTTPHeaders: {
+      "Accept-Language": "en-US,en;q=0.9",
+      "Accept-Encoding": "gzip, deflate, br",
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+    },
+    viewport: { width: 1366, height: 768 },
+  });
 
-const page = await context.newPage();
+  const page = await context.newPage();
 
   let found = false;
   for (let i = 0; i < 3; i++) {
@@ -53,8 +61,8 @@ const page = await context.newPage();
       await page.goto(
         "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
         {
-          waitUntil: "networkidle",
-          timeout: 60000,
+          waitUntil: ["domcontentloaded", "networkidle"],
+          timeout: 90000,
         }
       );
 
