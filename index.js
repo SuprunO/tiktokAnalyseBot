@@ -86,7 +86,10 @@ async function scrapeTikTokKeywordInsights(keyword) {
   await page.click('[data-testid="cc_commonCom_autoComplete_seach"]');
 
   // Wait for the results table to load
-  await page.waitForSelector(".byted-Table-Body", { timeout: 20000 });
+await page.waitForFunction(() => {
+  const table = document.querySelector(".byted-Table-Body");
+  return table && table.querySelectorAll("tr").length > 0;
+}, { timeout: 20000 });
 
   const data = await page.evaluate(() => {
     const tableBody = document.querySelector(".byted-Table-Body");
