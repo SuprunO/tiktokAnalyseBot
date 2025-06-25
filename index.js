@@ -35,7 +35,7 @@ app.post(`/bot${TELEGRAM_TOKEN}`, (req, res) => {
 
 async function scrapeTikTokKeywordInsights(keyword) {
   const browser = await chromium.launch({
-    headless: false, // keep headless for production
+    headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
     slowMo: 50,
   });
