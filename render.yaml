@@ -3,8 +3,8 @@ services:
     name: tiktokanalysebot
     env: docker
     plan: free
-    branch: main # or your active branch
-    region: frankfurt # or your closest region
+    branch: main 
+    region: frankfurt 
     dockerfilePath: ./Dockerfile
     autoDeploy: true
     envVars:
