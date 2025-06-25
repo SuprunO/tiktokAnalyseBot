@@ -37,37 +37,34 @@ async function scrapeTikTokKeywordInsights(keyword) {
   const browser = await chromium.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
-    slowMo: 50,
   });
 
   const context = await browser.newContext({
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117 Safari/537.36",
-    javaScriptEnabled: true,
-    extraHTTPHeaders: {
-      "Accept-Language": "en-US,en;q=0.9",
-      "Accept-Encoding": "gzip, deflate, br",
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-    },
     viewport: { width: 1366, height: 768 },
   });
 
   const page = await context.newPage();
 
   let found = false;
+
   for (let i = 0; i < 3; i++) {
     try {
       await page.goto(
         "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
         {
-          waitUntil: ["domcontentloaded", "networkidle"],
+          waitUntil: "load",
           timeout: 90000,
         }
       );
 
+      // Optional: wait extra to ensure JS executes
+      await page.waitForTimeout(5000);
+
+      // Wait for the actual element
       await page.waitForSelector('input[placeholder="Search by keyword"]', {
-        timeout: 60000,
+        timeout: 15000,
       });
 
       found = true;
@@ -88,7 +85,8 @@ async function scrapeTikTokKeywordInsights(keyword) {
   await page.fill('input[placeholder="Search by keyword"]', keyword);
   await page.click('[data-testid="cc_commonCom_autoComplete_seach"]');
 
-  await page.waitForSelector(".byted-Table-Body", { timeout: 15000 });
+  // Wait for the results table to load
+  await page.waitForSelector(".byted-Table-Body", { timeout: 20000 });
 
   const data = await page.evaluate(() => {
     const tableBody = document.querySelector(".byted-Table-Body");
