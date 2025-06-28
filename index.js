@@ -52,7 +52,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
   for (let i = 0; i < 3; i++) {
     try {
       await page.goto(
-        "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
+        "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en?rid=be0o73724t6",
         {
           waitUntil: "load",
           timeout: 90000,
