@@ -1,11 +1,16 @@
 services:
   - type: web
     name: tiktokanalysebot
+    plan: free
     env: docker
     dockerfilePath: ./Dockerfile
     # Build & start commands are handled by the Dockerfile, so no need to specify here.
     envVars:
       - key: TELEGRAM_TOKEN
         sync: false
+      - key: OPENAI_API_KEY  # You were missing this required key
+        sync: false
       - key: RENDER_EXTERNAL_URL
+        sync: false
+      - key: PORT  # Render automatically sets this
         sync: false
