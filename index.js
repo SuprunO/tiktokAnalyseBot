@@ -92,8 +92,8 @@ async function scrapeTikTokKeywordInsights(keyword) {
     await page.goto(
       "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
       {
-        waitUntil: "networkidle",
-        timeout: 60000,
+        waitUntil: "domcontentloaded",
+        timeout: 120000,
       }
     );
 
@@ -285,7 +285,10 @@ bot.on("message", async (msg) => {
         ],
       });
 
-      await bot.sendMessage(chatId, fallbackResponse.choices[0].message.content);
+      await bot.sendMessage(
+        chatId,
+        fallbackResponse.choices[0].message.content
+      );
       return;
     }
 
