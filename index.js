@@ -9,6 +9,14 @@ const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
 const PORT = process.env.PORT || 3000;
 
+
+console.log('ENV:', {
+  TELEGRAM_TOKEN,
+  OPENAI_KEY,
+  RENDER_EXTERNAL_URL,
+  PORT
+});
+
 if (!TELEGRAM_TOKEN || !OPENAI_KEY) {
   console.error('❗ Please set TELEGRAM_TOKEN and OPENAI_API_KEY in .env');
   process.exit(1);

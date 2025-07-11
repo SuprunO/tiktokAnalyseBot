@@ -1,23 +1,23 @@
-# Use official Playwright image with all browsers pre-installed
+# Офіційний Playwright-імідж з усіма браузерами
 FROM mcr.microsoft.com/playwright:v1.43.1-jammy
 
 WORKDIR /app
 
-# Install any OS packages if needed (e.g. fonts)
+# (Опційно) Встановити додаткові шрифти чи пакети
 # RUN apt-get update && apt-get install -y fonts-liberation
 
-# Copy package files
+# Копіюємо package файли окремо для кешу
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install --production
+# Встановлюємо тільки продакшн-залежності
+RUN npm ci --only=production
 
-# Copy source
+# Копіюємо увесь код
 COPY . .
 
-# Expose your bot port
+# Встановлюємо порт (Render вимагає його)
 ENV PORT=3000
 EXPOSE 3000
 
-# Default command uses xvfb-run to allow headful in headless environments
-CMD ["xvfb-run", "-a", "node", "index.js"]
+# Основна команда через xvfb-run (для headful у headless середовищі)
+CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24", "node", "index.js"]
