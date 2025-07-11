@@ -117,12 +117,9 @@ async function scrapeTikTokKeywordInsights(keyword) {
 
   try {
     console.log("⏳ Navigating to TikTok Creative Center...");
-    await page.goto(
+   await page.goto(
       "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
-      { 
-        waitUntil: "networkidle",
-        timeout: 120000 
-      }
+      { waitUntil: "domcontentloaded", timeout: 120000 }
     );
 
     console.log("⏳ Waiting for page to be fully ready...");
