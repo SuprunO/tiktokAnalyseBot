@@ -63,6 +63,13 @@ app.listen(PORT, "0.0.0.0", () => {
 });
 
 // ==============================
+// HELPER FUNCTIONS
+// ==============================
+function randomDelay(min = 1000, max = 3000) {
+  return new Promise(resolve => setTimeout(resolve, Math.random() * (max - min) + min));
+}
+
+// ==============================
 // SCRAPER FUNCTION
 // ==============================
 async function scrapeTikTokKeywordInsights(keyword) {
@@ -82,17 +89,28 @@ async function scrapeTikTokKeywordInsights(keyword) {
     ]
   });
 
-  const page = await browser.newPage();
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    viewport: { width: 1280, height: 720 }
+  });
 
-  // ✅ Лог усіх запитів
+  const page = await context.newPage();
+
+  // Ignore WebSocket errors
+  page.on('websocket', ws => {
+    ws.on('socketerror', error => {
+      console.log(`WebSocket error: ${error}`);
+    });
+  });
+
   page.on("request", request => {
     console.log(`➡️ Request: ${request.method()} ${request.url()}`);
   });
+  
   page.on("response", response => {
     console.log(`⬅️ Response: ${response.status()} ${response.url()}`);
   });
 
-  // ✅ Лог консолі з браузера
   page.on("console", msg => {
     console.log(`📢 Browser console: ${msg.type()}: ${msg.text()}`);
   });
@@ -101,13 +119,16 @@ async function scrapeTikTokKeywordInsights(keyword) {
     console.log("⏳ Navigating to TikTok Creative Center...");
     await page.goto(
       "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
-      { waitUntil: "domcontentloaded", timeout: 120000 }
+      { 
+        waitUntil: "networkidle",
+        timeout: 120000 
+      }
     );
 
-    console.log("⏳ Waiting 10s for page to be fully ready...");
-    await page.waitForTimeout(10000);
+    console.log("⏳ Waiting for page to be fully ready...");
+    await randomDelay(5000, 10000);
 
-    // ✅ CAPTCHA detection
+    // CAPTCHA detection
     const captcha = await page.$('iframe[src*="captcha"], div.captcha');
     if (captcha) {
       console.warn("⚠️ CAPTCHA detected on the page!");
@@ -119,37 +140,60 @@ async function scrapeTikTokKeywordInsights(keyword) {
 
     console.log(`🔍 Filling search input with "${keyword}"`);
     await page.fill('input[placeholder="Search by keyword"]', keyword);
+    await randomDelay(1000, 2000);
 
-    console.log("🖱 Attempting normal click on search button");
+    console.log("🖱 Attempting to click search button");
     try {
-      await page.click('[data-testid="cc_commonCom_autoComplete_seach"]', { timeout: 5000 });
+      // Try multiple selector variations
+      const searchButton = await page.$('[data-testid="cc_commonCom_autoComplete_seach"], button:has-text("Search")');
+      if (searchButton) {
+        await searchButton.click({ timeout: 10000 });
+      } else {
+        console.warn("⚠️ Search button not found with selectors, trying evaluate");
+        await page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll('button'));
+          const searchBtn = buttons.find(btn => 
+            btn.textContent.includes('Search') || 
+            btn.getAttribute('data-testid')?.includes('search')
+          );
+          searchBtn?.click();
+        });
+      }
     } catch (clickError) {
-      console.warn("⚠️ Normal click failed. Trying evaluate() click...");
-      console.log("🖱 Forcing click via JS evaluate()");
-      await page.evaluate(() => {
-        const btn = document.querySelector('[data-testid="cc_commonCom_autoComplete_seach"]');
-        btn?.click();
-      });
+      console.warn("⚠️ Click failed:", clickError.message);
+      console.log("🖱 Trying keyboard Enter as fallback");
+      await page.keyboard.press('Enter');
     }
 
-    console.log("⏳ Waiting 5s after click for results to load...");
-    await page.waitForTimeout(5000);
+    console.log("⏳ Waiting for results to load...");
+    try {
+      await page.waitForSelector(".byted-Table-Body, .table-container, .result-table", { 
+        timeout: 30000 
+      });
+    } catch (e) {
+      console.warn("⚠️ Table not found, checking for alternative indicators");
+      await page.waitForFunction(() => 
+        document.querySelector('.byted-Table-Body') || 
+        document.querySelector('.result-container') ||
+        document.body.innerText.includes('Keyword')
+      , { timeout: 30000 });
+    }
 
-    console.log("📸 Taking screenshot after search click...");
-    await page.screenshot({ path: "after_search_click.png", fullPage: true });
-    const htmlAfterClick = await page.content();
-    fs.writeFileSync("after_search_click.html", htmlAfterClick);
-
-    console.log("⏳ Waiting for results table selector...");
-    await page.waitForSelector(".byted-Table-Body", { timeout: 30000 });
+    console.log("📸 Taking screenshot after search...");
+    await page.screenshot({ path: "after_search.png", fullPage: true });
 
     console.log("📊 Extracting data from table...");
     const data = await page.evaluate(() => {
-      const tableBody = document.querySelector(".byted-Table-Body");
+      // Try multiple table selectors
+      const tableBody = document.querySelector(".byted-Table-Body") || 
+                       document.querySelector(".table-container") ||
+                       document.querySelector(".result-table tbody");
+      
       if (!tableBody) return [];
 
       return Array.from(tableBody.querySelectorAll("tr")).map(row => {
-        const cells = Array.from(row.querySelectorAll("td")).map(td => td.innerText.trim());
+        const cells = Array.from(row.querySelectorAll("td, th")).map(td => td.innerText.trim());
+        // More resilient cell mapping
         return {
           rank: cells[0] || "",
           keyword: cells[1] || "",
@@ -162,8 +206,35 @@ async function scrapeTikTokKeywordInsights(keyword) {
       });
     });
 
+    if (!data.length) {
+      // Fallback extraction method
+      const fallbackData = await page.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll('.keyword-row, .result-row'));
+        return rows.map(row => {
+          const cells = Array.from(row.querySelectorAll('div.cell, .data-cell'));
+          return {
+            rank: cells[0]?.innerText.trim() || "",
+            keyword: cells[1]?.innerText.trim() || "",
+            popularity: cells[2]?.innerText.trim() || "",
+            popularityChange: cells[3]?.innerText.trim() || "",
+            ctr: cells[4]?.innerText.trim() || "",
+            cvr: cells[5]?.innerText.trim() || "",
+            cpa: cells[6]?.innerText.trim() || ""
+          };
+        });
+      });
+
+      if (fallbackData.length) {
+        console.log(`✅ Extracted ${fallbackData.length} rows using fallback method`);
+        return fallbackData;
+      }
+
+      throw new Error("No data found in table");
+    }
+
     console.log(`✅ Extracted ${data.length} rows from table`);
 
+    // Process data
     data.forEach(item => {
       const ctrVal = parseFloat(item.ctr.replace("%", "").replace(",", ".")) || 0.01;
       const cpaVal = parseFloat(item.cpa.replace(/[^\d.,]/g, "").replace(",", ".")) || 0.01;
@@ -172,9 +243,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
       item.contentGapScore = Number(score.toFixed(2));
     });
 
-    data.sort((a, b) => b.contentGapScore - a.contentGapScore);
-
-    return data;
+    return data.sort((a, b) => b.contentGapScore - a.contentGapScore);
   } catch (error) {
     console.error("❌ Error during scraping:", error);
     try {
