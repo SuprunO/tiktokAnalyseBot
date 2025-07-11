@@ -4,6 +4,7 @@ const express = require("express");
 const { chromium } = require("playwright");
 const TelegramBot = require("node-telegram-bot-api");
 const OpenAI = require("openai");
+const fs = require("fs");
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
@@ -71,8 +72,17 @@ async function scrapeTikTokKeywordInsights(keyword) {
   console.log(`🌐 Starting browser for keyword: "${keyword}"`);
 
   const browser = await chromium.launch({
-    headless: false,
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    headless: false, // якщо треба, можна з ENV
+    args: [
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--use-gl=swiftshader",
+      "--disable-software-rasterizer",
+      "--disable-setuid-sandbox",
+      "--disable-accelerated-2d-canvas",
+      "--no-zygote",
+    ],
   });
 
   const page = await browser.newPage();
@@ -89,6 +99,16 @@ async function scrapeTikTokKeywordInsights(keyword) {
 
     console.log("⏳ Waiting 10s for page to be fully ready...");
     await page.waitForTimeout(10000);
+
+    // Перевірка на CAPTCHA
+    const captcha = await page.$('iframe[src*="captcha"], div.captcha');
+    if (captcha) {
+      console.warn("⚠️ CAPTCHA detected on the page!");
+      await page.screenshot({ path: "captcha_detected.png", fullPage: true });
+      const html = await page.content();
+      fs.writeFileSync("captcha_detected.html", html);
+      throw new Error("CAPTCHA detected");
+    }
 
     console.log(`🔍 Filling search input with "${keyword}"`);
     await page.fill('input[placeholder="Search by keyword"]', keyword);
@@ -131,7 +151,8 @@ async function scrapeTikTokKeywordInsights(keyword) {
       const cpaVal =
         parseFloat(item.cpa.replace(/[^\d.,]/g, "").replace(",", ".")) || 0.01;
       const popChangeVal =
-        parseFloat(item.popularityChange.replace("%", "").replace(",", ".")) || 0;
+        parseFloat(item.popularityChange.replace("%", "").replace(",", ".")) ||
+        0;
       const score = popChangeVal * (cpaVal / ctrVal);
       item.contentGapScore = Number(score.toFixed(2));
     });
@@ -141,6 +162,15 @@ async function scrapeTikTokKeywordInsights(keyword) {
     return data;
   } catch (error) {
     console.error("❌ Error during scraping:", error);
+
+    try {
+      await page.screenshot({ path: "error_screenshot.png", fullPage: true });
+      const html = await page.content();
+      fs.writeFileSync("error_page.html", html);
+    } catch (e) {
+      console.error("❌ Failed to save screenshot or HTML:", e);
+    }
+
     return [];
   } finally {
     await browser.close();
