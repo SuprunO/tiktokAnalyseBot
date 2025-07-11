@@ -1,20 +1,23 @@
-# Use official Playwright base image with browsers pre-installed
+# Use official Playwright image with all browsers pre-installed
 FROM mcr.microsoft.com/playwright:v1.43.1-jammy
 
 WORKDIR /app
 
-# Copy package files first to leverage caching
+# Install any OS packages if needed (e.g. fonts)
+# RUN apt-get update && apt-get install -y fonts-liberation
+
+# Copy package files
 COPY package*.json ./
 
-# Install dependencies (including playwright browsers)
-RUN npm install
+# Install dependencies
+RUN npm install --production
 
-# Copy rest of your app code
+# Copy source
 COPY . .
 
-# Expose the port your app will run on
+# Expose your bot port
 ENV PORT=3000
 EXPOSE 3000
 
-# Start your app
-CMD ["node", "index.js"]
+# Default command uses xvfb-run to allow headful in headless environments
+CMD ["xvfb-run", "-a", "node", "index.js"]
