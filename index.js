@@ -9,7 +9,6 @@ const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
 const PORT = process.env.PORT || 3000;
 
-
 console.log('ENV:', {
   TELEGRAM_TOKEN,
   OPENAI_KEY,
@@ -22,37 +21,35 @@ if (!TELEGRAM_TOKEN || !OPENAI_KEY) {
   process.exit(1);
 }
 
-const openai = new OpenAI({
-  apiKey: OPENAI_KEY
-});
+const openai = new OpenAI({ apiKey: OPENAI_KEY });
 
-// ==============================
-//  TELEGRAM BOT
-// ==============================
+const app = express();
+app.use(express.json());
+
+app.get('/', (req, res) => res.send('✅ Bot is running.'));
 
 let bot;
 if (RENDER_EXTERNAL_URL) {
-  // Render deployment - Webhook
+  console.log('🟢 Running in Webhook mode');
   bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
-  bot.setWebHook(`${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`).then(() =>
-    console.log(`✅ Webhook set to ${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`)
-  );
 
-  const app = express();
-  app.use(express.json());
+  bot.setWebHook(`${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`)
+    .then(() => console.log(`✅ Webhook set to ${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`))
+    .catch(console.error);
 
-  app.get('/', (req, res) => res.send('Bot is running.'));
   app.post(`/bot${TELEGRAM_TOKEN}`, (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
   });
-
-  app.listen(PORT, () => console.log(`🚀 Express server on ${PORT}`));
 } else {
-  // Local polling
+  console.log('🟠 Running in Polling mode');
   bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
-  console.log('✅ Bot running in polling mode.');
+  console.log('✅ Polling started.');
 }
+
+app.listen(PORT, () => {
+  console.log(`🚀 Express server listening on port ${PORT}`);
+});
 
 // ==============================
 //  SCRAPER FUNCTION
@@ -174,7 +171,6 @@ bot.on('message', async (msg) => {
     const results = await scrapeTikTokKeywordInsights(text);
 
     if (!results.length) {
-      // GPT fallback
       await bot.sendMessage(chatId, '❗ У Creative Center немає даних. Генерую ідею з GPT...');
       const fallbackPrompt = `
 Тема: "${text}"
@@ -195,10 +191,7 @@ bot.on('message', async (msg) => {
       return bot.sendMessage(chatId, fallbackResponse.choices[0].message.content);
     }
 
-    // Send table first
     await bot.sendMessage(chatId, '✅ Знайдено дані. Ось таблиця:\n\n' + formatTable(results.slice(0, 5)));
-
-    // GPT analysis
     await bot.sendMessage(chatId, '💬 Аналізую з GPT...');
     const topN = results.slice(0, Math.min(5, results.length));
     const gptPrompt = makeGPTPrompt(text, topN);
