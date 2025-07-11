@@ -115,6 +115,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
 
     console.log("🖱 Clicking search button");
     await page.click('[data-testid="cc_commonCom_autoComplete_seach"]');
+    await page.waitForTimeout(4000);
 
     console.log("⏳ Waiting for results table selector...");
     await page.waitForSelector(".byted-Table-Body", { timeout: 30000 });
