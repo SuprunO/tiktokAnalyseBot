@@ -101,7 +101,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
   let browser;
   try {
     browser = await chromium.launch({
-      headless: true, // Changed to true for memory efficiency
+      headless: false, 
       args: [
         "--no-sandbox",
         "--disable-dev-shm-usage",
@@ -111,7 +111,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
         "--disable-setuid-sandbox",
         "--disable-accelerated-2d-canvas",
         "--no-zygote",
-        "--single-process" // Reduces memory usage
+        "--single-process"
       ]
     });
 
@@ -130,7 +130,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
       console.log("⏳ Navigating to TikTok Creative Center...");
       await page.goto(
         "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
-        { waitUntil: "networkidle", timeout: 120000 }
+        { waitUntil: "domcontentloaded", timeout: 120000 }
       );
 
       console.log("⏳ Waiting for page to be fully ready...");
