@@ -47,6 +47,7 @@ if (RENDER_EXTERNAL_URL) {
     .catch(console.error);
 
   app.post(`/bot${TELEGRAM_TOKEN}`, (req, res) => {
+    console.log("🔔 Received update via webhook");
     bot.processUpdate(req.body);
     res.sendStatus(200);
   });
@@ -67,6 +68,8 @@ app.listen(PORT, "0.0.0.0", () => {
 // SCRAPER FUNCTION
 // ==============================
 async function scrapeTikTokKeywordInsights(keyword) {
+  console.log(`🌐 Starting browser for keyword: "${keyword}"`);
+
   const browser = await chromium.launch({
     headless: false,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
@@ -74,54 +77,75 @@ async function scrapeTikTokKeywordInsights(keyword) {
 
   const page = await browser.newPage();
 
-  await page.goto(
-    "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
-    {
-      waitUntil: "networkidle",
-    }
-  );
+  try {
+    console.log("⏳ Navigating to TikTok Creative Center...");
+    await page.goto(
+      "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
+      {
+        waitUntil: "networkidle",
+        timeout: 60000,
+      }
+    );
 
-  await page.waitForTimeout(10000);
-  await page.fill('input[placeholder="Search by keyword"]', keyword);
-  await page.click('[data-testid="cc_commonCom_autoComplete_seach"]');
+    console.log("⏳ Waiting 10s for page to be fully ready...");
+    await page.waitForTimeout(10000);
 
-  await page.waitForSelector(".byted-Table-Body", { timeout: 20000 });
+    console.log(`🔍 Filling search input with "${keyword}"`);
+    await page.fill('input[placeholder="Search by keyword"]', keyword);
 
-  const data = await page.evaluate(() => {
-    const tableBody = document.querySelector(".byted-Table-Body");
-    if (!tableBody) return [];
+    console.log("🖱 Clicking search button");
+    await page.click('[data-testid="cc_commonCom_autoComplete_seach"]');
 
-    return Array.from(tableBody.querySelectorAll("tr")).map((row) => {
-      const cells = Array.from(row.querySelectorAll("td")).map((td) =>
-        td.innerText.trim()
-      );
-      return {
-        rank: cells[0] || "",
-        keyword: cells[1] || "",
-        popularity: cells[2] || "",
-        popularityChange: cells[3] || "",
-        ctr: cells[4] || "",
-        cvr: cells[5] || "",
-        cpa: cells[6] || "",
-      };
+    console.log("⏳ Waiting for results table selector...");
+    await page.waitForSelector(".byted-Table-Body", { timeout: 30000 });
+
+    console.log("📊 Extracting data from table...");
+    const data = await page.evaluate(() => {
+      const tableBody = document.querySelector(".byted-Table-Body");
+      if (!tableBody) {
+        console.log("⚠️ Table body selector not found");
+        return [];
+      }
+
+      return Array.from(tableBody.querySelectorAll("tr")).map((row) => {
+        const cells = Array.from(row.querySelectorAll("td")).map((td) =>
+          td.innerText.trim()
+        );
+        return {
+          rank: cells[0] || "",
+          keyword: cells[1] || "",
+          popularity: cells[2] || "",
+          popularityChange: cells[3] || "",
+          ctr: cells[4] || "",
+          cvr: cells[5] || "",
+          cpa: cells[6] || "",
+        };
+      });
     });
-  });
 
-  await browser.close();
+    console.log(`✅ Extracted ${data.length} rows from table`);
 
-  data.forEach((item) => {
-    const ctrVal =
-      parseFloat(item.ctr.replace("%", "").replace(",", ".")) || 0.01;
-    const cpaVal =
-      parseFloat(item.cpa.replace(/[^\d.,]/g, "").replace(",", ".")) || 0.01;
-    const popChangeVal =
-      parseFloat(item.popularityChange.replace("%", "").replace(",", ".")) || 0;
-    const score = popChangeVal * (cpaVal / ctrVal);
-    item.contentGapScore = Number(score.toFixed(2));
-  });
+    data.forEach((item) => {
+      const ctrVal =
+        parseFloat(item.ctr.replace("%", "").replace(",", ".")) || 0.01;
+      const cpaVal =
+        parseFloat(item.cpa.replace(/[^\d.,]/g, "").replace(",", ".")) || 0.01;
+      const popChangeVal =
+        parseFloat(item.popularityChange.replace("%", "").replace(",", ".")) || 0;
+      const score = popChangeVal * (cpaVal / ctrVal);
+      item.contentGapScore = Number(score.toFixed(2));
+    });
 
-  data.sort((a, b) => b.contentGapScore - a.contentGapScore);
-  return data;
+    data.sort((a, b) => b.contentGapScore - a.contentGapScore);
+
+    return data;
+  } catch (error) {
+    console.error("❌ Error during scraping:", error);
+    return [];
+  } finally {
+    await browser.close();
+    console.log("🛑 Browser closed");
+  }
 }
 
 // ==============================
@@ -182,6 +206,7 @@ ${rowsText}
 // BOT LOGIC
 // ==============================
 bot.onText(/\/start/, (msg) => {
+  console.log(`📩 /start received from chatId ${msg.chat.id}`);
   bot.sendMessage(
     msg.chat.id,
     "Привіт! Надішли мені слово для аналізу з TikTok Creative Center."
@@ -191,6 +216,7 @@ bot.onText(/\/start/, (msg) => {
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim();
+  console.log(`📩 Received message from chatId ${chatId}: "${text}"`);
 
   if (!text || text.startsWith("/start")) return;
 
@@ -203,10 +229,12 @@ bot.on("message", async (msg) => {
     const results = await scrapeTikTokKeywordInsights(text);
 
     if (!results.length) {
+      console.log(`❗ No data for keyword "${text}", fallback to GPT`);
       await bot.sendMessage(
         chatId,
         "❗ У Creative Center немає даних. Генерую ідею з GPT..."
       );
+
       const fallbackPrompt = `
 Тема: "${text}"
 1️⃣ 📌 Слово
@@ -227,17 +255,18 @@ bot.on("message", async (msg) => {
         ],
       });
 
-      return bot.sendMessage(
-        chatId,
-        fallbackResponse.choices[0].message.content
-      );
+      await bot.sendMessage(chatId, fallbackResponse.choices[0].message.content);
+      return;
     }
+
+    console.log(`✅ Found ${results.length} results for "${text}"`);
 
     await bot.sendMessage(
       chatId,
       "✅ Знайдено дані. Ось таблиця:\n\n" + formatTable(results.slice(0, 5))
     );
     await bot.sendMessage(chatId, "💬 Аналізую з GPT...");
+
     const topN = results.slice(0, Math.min(5, results.length));
     const gptPrompt = makeGPTPrompt(text, topN);
 
@@ -255,7 +284,7 @@ bot.on("message", async (msg) => {
 
     await bot.sendMessage(chatId, completion.choices[0].message.content);
   } catch (err) {
-    console.error(err);
+    console.error("❌ Bot error:", err);
     await bot.sendMessage(
       chatId,
       "❗ Сталася помилка. Спробуй ще раз пізніше."
