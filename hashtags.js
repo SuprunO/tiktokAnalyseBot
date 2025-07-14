@@ -1,60 +1,83 @@
 const { chromium } = require("playwright");
 
 (async () => {
+  const periodDays = 30; // <<== тут можна міняти період (7, 30, 120)
+
   const browser = await chromium.launch({ headless: false });
   const page = await browser.newPage();
 
-  console.log("Opening TikTok Creative Center...");
+  console.log("🌐 Opening TikTok Creative Center (Popular Hashtags)...");
   await page.goto(
     "https://ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag/pc/en",
     { waitUntil: "networkidle", timeout: 120000 }
   );
 
-  console.log("Waiting 10 seconds for initial hashtags to render...");
-  await page.waitForTimeout(10000);
+  await page.waitForTimeout(8000);
 
-  // Клікаємо кнопку "See More" поки вона існує та доступна
-  console.log("Clicking 'See More' button to load all hashtags...");
-  while (true) {
-    // Знаходимо кнопку за текстом, чекаємо що вона видима і клікабельна
+  // 1️⃣ Вибір періоду часу
+  console.log(`🟠 Selecting time period: Last ${periodDays} Days...`);
+
+  try {
+    await page.waitForSelector('[id="hashtagPeriodSelect"]', { timeout: 10000 });
+    await page.click('[id="hashtagPeriodSelect"]');
+    await page.waitForTimeout(2000);
+
+    let timeOption = await page.$(`text="Last ${periodDays} days"`);
+    if (!timeOption) {
+      console.warn(`⚠️ Text option 'Last ${periodDays} Days' not found. Trying fallback selector...`);
+      timeOption = await page.$('[data-testid="cc_single_select_undefined_item_1"]');
+    }
+
+    if (timeOption) {
+      await timeOption.click();
+      console.log(`✅ Time set to Last ${periodDays} Days`);
+    } else {
+      console.warn(`⚠️ Time option for '${periodDays} Days' not found. Keeping default.`);
+    }
+  } catch (err) {
+    console.error("❌ Error selecting time:", err);
+  }
+
+  await page.waitForTimeout(5000);
+
+  // 2️⃣ Клікаємо "See More", якщо є
+  console.log("🟠 Clicking 'See More' button to load all hashtags...");
+  for (let i = 0; i < 15; i++) {
     const seeMoreBtn = await page.$('[data-testid=cc_contentArea_viewmore_btn]');
-
     if (!seeMoreBtn) {
-      console.log("No more 'See More' button found.");
+      console.log("ℹ️ No more 'See More' button found.");
       break;
     }
 
-    // Переконаємось, що кнопка не заблокована та видима
     const isVisible = await seeMoreBtn.isVisible();
     const isEnabled = await seeMoreBtn.isEnabled();
 
     if (!isVisible || !isEnabled) {
-      console.log("'See More' button is not visible or enabled, зупинка.");
+      console.log("⚠️ 'See More' button is not visible or enabled, stopping.");
       break;
     }
 
     await seeMoreBtn.click();
-    console.log("'See More' clicked, чекаємо 5 секунд для підвантаження...");
-    await page.waitForTimeout(5000);
+    console.log("✅ 'See More' clicked, waiting 4 seconds...");
+    await page.waitForTimeout(4000);
   }
 
-  // Додатково скролимо сторінку вниз, щоб підвантажити весь контент
-  console.log("Scrolling to load all content...");
-  let previousHeight;
+  // 3️⃣ Додаткове прокручування сторінки
+  console.log("🟠 Scrolling to load all content...");
   for (let i = 0; i < 10; i++) {
-    previousHeight = await page.evaluate(() => document.body.scrollHeight);
+    const prevHeight = await page.evaluate(() => document.body.scrollHeight);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(3000);
     const newHeight = await page.evaluate(() => document.body.scrollHeight);
-    if (newHeight === previousHeight) {
-      console.log("No more new content loaded.");
+    if (newHeight === prevHeight) {
+      console.log("ℹ️ No more new content loaded.");
       break;
     }
   }
 
-  console.log("Extracting hashtags from page...");
-
- const hashtags = await page.evaluate(() => {
+  // 4️⃣ Збір даних
+  console.log("🔎 Extracting hashtags from page...");
+  const hashtags = await page.evaluate(() => {
     const results = [];
     const cards = document.querySelectorAll('a[class*="container"]');
 
@@ -71,10 +94,9 @@ const { chromium } = require("playwright");
         let text = postTextEl.textContent
           .trim()
           .toUpperCase()
-          .replace(/\s+/g, '')
-          .replace('POSTS', '');
+          .replace(' POSTS', '')
+          .replace(/\s+/g, '');
 
-        // Smart parsing
         if (text.endsWith('K')) {
           posts = parseFloat(text.replace('K', '')) * 1000;
         } else if (text.endsWith('M')) {
