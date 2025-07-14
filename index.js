@@ -342,35 +342,47 @@ bot.on("message", async (msg) => {
   // -------------------------------
   // Обробка запиту на ключове слово
   // -------------------------------
-  if (userStates[chatId]?.waitingForKeyword) {
-    userStates[chatId] = {};
-    const keyword = text;
-    await bot.sendMessage(chatId, `🔎 Шукаю за ключовим словом: "${keyword}"... Це може зайняти 30-60 секунд.`);
-    const results = await scrapeTikTokKeywordInsights(keyword);
-    if (!results.length) {
-      await bot.sendMessage(chatId, "❗ Немає даних у Creative Center. Генерую ідею з GPT...");
-      const prompt = `
+ // -------------------------------
+// Обробка запиту на ключове слово
+// -------------------------------
+if (userStates[chatId]?.waitingForKeyword) {
+  userStates[chatId] = {};
+  const keyword = text;
+
+  await bot.sendMessage(chatId, `🔎 Шукаю за ключовим словом: "${keyword}"... Це може зайняти 30-60 секунд.`);
+
+  // 1️⃣ Скрейпінг з TikTok Creative Center
+  const results = await scrapeTikTokKeywordInsights(keyword);
+
+  if (results.length) {
+    await bot.sendMessage(chatId, "✅ Знайдено дані в Creative Center:\n\n" + formatTable(results));
+  } else {
+    await bot.sendMessage(chatId, "⚠️ Немає даних у Creative Center.");
+  }
+
+  // 2️⃣ Додатково GPT-ідея
+  await bot.sendMessage(chatId, "🧠 Генерую також ідею з GPT...");
+
+  const prompt = `
 Тема: "${keyword}"
 1️⃣ 📌 Слово
 2️⃣ 🎥 Сценарій
 3️⃣ 📊 Чому це спрацює
 4️⃣ 🏷️ 5-7 хештегів українською
 `;
-      const fallbackResponse = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          { role: "system", content: "Ти досвідчений маркетолог і TikTok-креатор. Відповідай українською мовою." },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: 500,
-      });
-      await bot.sendMessage(chatId, fallbackResponse.choices[0].message.content);
-      return;
-    }
 
-    await bot.sendMessage(chatId, "✅ Знайдено дані:\n\n" + formatTable(results));
-    return;
-  }
+  const fallbackResponse = await openai.chat.completions.create({
+    model: "gpt-3.5-turbo",
+    messages: [
+      { role: "system", content: "Ти досвідчений маркетолог і TikTok-креатор. Відповідай українською мовою." },
+      { role: "user", content: prompt },
+    ],
+    max_tokens: 500,
+  });
+
+  await bot.sendMessage(chatId, fallbackResponse.choices[0].message.content);
+  return;
+}
 
   // -------------------------------
   // Обробка вибору /keywords
