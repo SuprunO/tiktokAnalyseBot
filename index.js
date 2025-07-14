@@ -40,9 +40,12 @@ if (RENDER_EXTERNAL_URL) {
   console.log("🟢 Running in Webhook mode");
   bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
 
-  bot.setWebHook(`${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`)
+  bot
+    .setWebHook(`${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`)
     .then(() =>
-      console.log(`✅ Webhook set to ${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`)
+      console.log(
+        `✅ Webhook set to ${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`
+      )
     )
     .catch(console.error);
 
@@ -68,18 +71,25 @@ app.listen(PORT, "0.0.0.0", () => {
 // HELPER FUNCTIONS (Memory Optimized)
 // ==============================
 function randomDelay(min = 1000, max = 3000) {
-  return new Promise(resolve => setTimeout(resolve, Math.random() * (max - min) + min));
+  return new Promise((resolve) =>
+    setTimeout(resolve, Math.random() * (max - min) + min)
+  );
 }
 
 // Memory cleanup utility
 async function cleanupTempFiles() {
   try {
-    const files = ['captcha_detected.png', 'captcha_detected.html', 'error_screenshot.png', 'error_page.html'];
+    const files = [
+      "captcha_detected.png",
+      "captcha_detected.html",
+      "error_screenshot.png",
+      "error_page.html",
+    ];
     for (const file of files) {
       try {
         await fs.unlink(file);
       } catch (e) {
-        if (e.code !== 'ENOENT') console.error(`Cleanup error for ${file}:`, e);
+        if (e.code !== "ENOENT") console.error(`Cleanup error for ${file}:`, e);
       }
     }
   } catch (e) {
@@ -96,12 +106,14 @@ async function scrapeTikTokKeywordInsights(keyword) {
   }
 
   activeScrapes++;
-  console.log(`🌐 Starting browser for keyword: "${keyword}" (Active scrapes: ${activeScrapes})`);
+  console.log(
+    `🌐 Starting browser for keyword: "${keyword}" (Active scrapes: ${activeScrapes})`
+  );
 
   let browser;
   try {
     browser = await chromium.launch({
-      headless: false, 
+      headless: false,
       args: [
         "--no-sandbox",
         "--disable-dev-shm-usage",
@@ -111,23 +123,24 @@ async function scrapeTikTokKeywordInsights(keyword) {
         "--disable-setuid-sandbox",
         "--disable-accelerated-2d-canvas",
         "--no-zygote",
-        "--single-process"
-      ]
+        "--single-process",
+      ],
     });
 
     const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-      viewport: { width: 1280, height: 720 }
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      viewport: { width: 1280, height: 720 },
     });
 
     const page = await context.newPage();
 
     // Limit event listeners to reduce memory
-    const errorHandler = error => console.log(`WebSocket error: ${error}`);
-    page.on('websocket', ws => ws.on('socketerror', errorHandler));
+    const errorHandler = (error) => console.log(`WebSocket error: ${error}`);
+    page.on("websocket", (ws) => ws.on("socketerror", errorHandler));
 
     try {
-      console.log("⏳ Navigating to TikTok Creative Center...");
+      console.log("⏳ Navigating to data source");
       await page.goto(
         "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
         { waitUntil: "domcontentloaded", timeout: 120000 }
@@ -140,50 +153,67 @@ async function scrapeTikTokKeywordInsights(keyword) {
       const captcha = await page.$('iframe[src*="captcha"], div.captcha');
       if (captcha) {
         console.warn("⚠️ CAPTCHA detected on the page!");
-        await page.screenshot({ path: "captcha_detected.png", fullPage: false }); // Reduced size
+        await page.screenshot({
+          path: "captcha_detected.png",
+          fullPage: false,
+        }); // Reduced size
         const html = await page.content();
         await fs.writeFile("captcha_detected.html", html);
         throw new Error("CAPTCHA detected");
       }
 
       console.log(`🔍 Filling search input with "${keyword}"`);
+
+      const popupSkip = await page.$("[class*=skip-btn]");
+      await popupSkip.click({ timeout: 10000 });
       await page.fill('input[placeholder="Search by keyword"]', keyword);
       await randomDelay(1000, 2000);
 
       console.log("🖱 Attempting to click search button");
       try {
-        const searchButton = await page.$('[data-testid="cc_commonCom_autoComplete_seach"], button:has-text("Search")');
+        const searchButton = await page.$(
+          '[data-testid="cc_commonCom_autoComplete_seach"], button:has-text("Search")'
+        );
         if (searchButton) {
           await searchButton.click({ timeout: 10000 });
         } else {
-          await page.keyboard.press('Enter');
+          await page.keyboard.press("Enter");
         }
       } catch (clickError) {
-        console.warn("⚠️ Click failed, using keyboard fallback:", clickError.message);
-        await page.keyboard.press('Enter');
+        console.warn(
+          "⚠️ Click failed, using keyboard fallback:",
+          clickError.message
+        );
+        await page.keyboard.press("Enter");
       }
 
       console.log("⏳ Waiting for results to load...");
-      await page.waitForSelector(".byted-Table-Body, .table-container, .result-table", { 
-        timeout: 30000 
-      });
+      await page.waitForSelector(
+        ".byted-Table-Body, .table-container, .result-table",
+        {
+          timeout: 30000,
+        }
+      );
 
       console.log("📊 Extracting data from table...");
       const data = await page.evaluate(() => {
-        const tableBody = document.querySelector(".byted-Table-Body") || 
-                         document.querySelector(".table-container") ||
-                         document.querySelector(".result-table tbody");
-        
+        const tableBody =
+          document.querySelector(".byted-Table-Body") ||
+          document.querySelector(".table-container") ||
+          document.querySelector(".result-table tbody");
+
         if (!tableBody) return [];
 
         const rows = Array.from(tableBody.querySelectorAll("tr"));
         const result = [];
-        
+
         // Process rows in batches to avoid memory spikes
         for (let i = 0; i < rows.length; i++) {
           const row = rows[i];
-          const cells = Array.from(row.querySelectorAll("td, th")).map(td => td.innerText.trim());
-          
+          const cells = Array.from(row.querySelectorAll("td, th")).map((td) =>
+            td.innerText.trim()
+          );
+
           result.push({
             rank: cells[0] || "",
             keyword: cells[1] || "",
@@ -191,18 +221,22 @@ async function scrapeTikTokKeywordInsights(keyword) {
             popularityChange: cells[3] || "",
             ctr: cells[4] || "",
             cvr: cells[5] || "",
-            cpa: cells[6] || ""
+            cpa: cells[6] || "",
           });
         }
-        
+
         return result;
       });
 
       if (!data.length) {
         const fallbackData = await page.evaluate(() => {
-          const rows = Array.from(document.querySelectorAll('.keyword-row, .result-row'));
-          return rows.map(row => {
-            const cells = Array.from(row.querySelectorAll('div.cell, .data-cell'));
+          const rows = Array.from(
+            document.querySelectorAll(".keyword-row, .result-row")
+          );
+          return rows.map((row) => {
+            const cells = Array.from(
+              row.querySelectorAll("div.cell, .data-cell")
+            );
             return {
               rank: cells[0]?.innerText.trim() || "",
               keyword: cells[1]?.innerText.trim() || "",
@@ -210,13 +244,15 @@ async function scrapeTikTokKeywordInsights(keyword) {
               popularityChange: cells[3]?.innerText.trim() || "",
               ctr: cells[4]?.innerText.trim() || "",
               cvr: cells[5]?.innerText.trim() || "",
-              cpa: cells[6]?.innerText.trim() || ""
+              cpa: cells[6]?.innerText.trim() || "",
             };
           });
         });
 
         if (fallbackData.length) {
-          console.log(`✅ Extracted ${fallbackData.length} rows using fallback method`);
+          console.log(
+            `✅ Extracted ${fallbackData.length} rows using fallback method`
+          );
           return fallbackData;
         }
         throw new Error("No data found in table");
@@ -227,27 +263,38 @@ async function scrapeTikTokKeywordInsights(keyword) {
       // Process data in smaller chunks
       const processedData = [];
       const batchSize = 50; // Process in batches to avoid memory spikes
-      
+
       for (let i = 0; i < data.length; i += batchSize) {
         const batch = data.slice(i, i + batchSize);
         for (const item of batch) {
-          const ctrVal = parseFloat(item.ctr.replace("%", "").replace(",", ".")) || 0.01;
-          const cpaVal = parseFloat(item.cpa.replace(/[^\d.,]/g, "").replace(",", ".")) || 0.01;
-          const popChangeVal = parseFloat(item.popularityChange.replace("%", "").replace(",", ".")) || 0;
+          const ctrVal =
+            parseFloat(item.ctr.replace("%", "").replace(",", ".")) || 0.01;
+          const cpaVal =
+            parseFloat(item.cpa.replace(/[^\d.,]/g, "").replace(",", ".")) ||
+            0.01;
+          const popChangeVal =
+            parseFloat(
+              item.popularityChange.replace("%", "").replace(",", ".")
+            ) || 0;
           const score = popChangeVal * (cpaVal / ctrVal);
-          
+
           processedData.push({
             ...item,
-            contentGapScore: Number(score.toFixed(2))
+            contentGapScore: Number(score.toFixed(2)),
           });
         }
       }
 
-      return processedData.sort((a, b) => b.contentGapScore - a.contentGapScore);
+      return processedData.sort(
+        (a, b) => b.contentGapScore - a.contentGapScore
+      );
     } catch (error) {
       console.error("❌ Error during scraping:", error);
       try {
-        await page.screenshot({ path: "error_screenshot.png", fullPage: false }); // Reduced size
+        await page.screenshot({
+          path: "error_screenshot.png",
+          fullPage: false,
+        }); // Reduced size
         const html = await page.content();
         await fs.writeFile("error_page.html", html);
         console.log("✅ Saved error screenshot and HTML");
@@ -278,7 +325,8 @@ function formatTable(data) {
   if (!data.length) return "❗ Немає даних у Creative Center.";
 
   // Limit to first 5 items to reduce message size
-  return data.slice(0, 5)
+  return data
+    .slice(0, 5)
     .map(
       (item, idx) =>
         `#${idx + 1}\n` +
@@ -296,7 +344,8 @@ function formatTable(data) {
 
 function makeGPTPrompt(keyword, topN) {
   // Limit to first 3 items to reduce token usage
-  const rowsText = topN.slice(0, 3)
+  const rowsText = topN
+    .slice(0, 3)
     .map((item, idx) =>
       `
 #${idx + 1}
@@ -332,10 +381,12 @@ ${rowsText}
 // ==============================
 bot.onText(/\/start/, (msg) => {
   console.log(`📩 /start received from chatId ${msg.chat.id}`);
-  bot.sendMessage(
-    msg.chat.id,
-    "Привіт! Надішли мені слово для аналізу з TikTok Creative Center."
-  ).catch(console.error);
+  bot
+    .sendMessage(
+      msg.chat.id,
+      "Привіт! Надішли мені слово для аналізу з TikTok Creative Center."
+    )
+    .catch(console.error);
 });
 
 bot.on("message", async (msg) => {
@@ -373,23 +424,28 @@ bot.on("message", async (msg) => {
         messages: [
           {
             role: "system",
-            content: "Ти досвідчений маркетолог і TikTok-креатор. Відповідай українською мовою.",
+            content:
+              "Ти досвідчений маркетолог і TikTok-креатор. Відповідай українською мовою.",
           },
           { role: "user", content: fallbackPrompt },
         ],
-        max_tokens: 500 // Limit response size
+        max_tokens: 500, // Limit response size
       });
 
-      await bot.sendMessage(chatId, fallbackResponse.choices[0].message.content);
+      await bot.sendMessage(
+        chatId,
+        fallbackResponse.choices[0].message.content
+      );
       return;
     }
 
     console.log(`✅ Found ${results.length} results for "${text}"`);
 
     // Split large messages to avoid memory issues
-    const tableMessage = "✅ Знайдено дані. Ось таблиця:\n\n" + formatTable(results);
+    const tableMessage =
+      "✅ Знайдено дані. Ось таблиця:\n\n" + formatTable(results);
     await bot.sendMessage(chatId, tableMessage);
-    
+
     await bot.sendMessage(chatId, "💬 Аналізую з GPT...");
 
     const topN = results.slice(0, 3); // Reduced from 5 to 3 for memory
@@ -400,11 +456,12 @@ bot.on("message", async (msg) => {
       messages: [
         {
           role: "system",
-          content: "Ти досвідчений маркетолог і сценарист TikTok Ads. Відповідай українською мовою.",
+          content:
+            "Ти досвідчений маркетолог і сценарист TikTok Ads. Відповідай українською мовою.",
         },
         { role: "user", content: gptPrompt },
       ],
-      max_tokens: 1000 // Limit response size
+      max_tokens: 1000, // Limit response size
     });
 
     // Split long GPT response into chunks
@@ -416,10 +473,9 @@ bot.on("message", async (msg) => {
     }
   } catch (err) {
     console.error("❌ Bot error:", err);
-    await bot.sendMessage(
-      chatId,
-      "❗ Сталася помилка. Спробуй ще раз пізніше."
-    ).catch(e => console.error("Failed to send error message:", e));
+    await bot
+      .sendMessage(chatId, "❗ Сталася помилка. Спробуй ще раз пізніше.")
+      .catch((e) => console.error("Failed to send error message:", e));
   }
 });
 
