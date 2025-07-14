@@ -88,7 +88,7 @@ async function scrapeTikTokKeywordInsights(keyword) {
 
     console.log("🌐 Opening TikTok Keyword Page...");
     await page.goto("https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en", {
-      waitUntil: "networkidle", timeout: 120000
+      waitUntil: "domcontentloaded", timeout: 120000
     });
     await page.waitForTimeout(8000);
 
@@ -151,7 +151,7 @@ async function scrapeTikTokHashtagInsights(period = 30) {
 
     console.log("🌐 Opening TikTok Hashtag Page...");
     await page.goto("https://ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag/pc/en", {
-      waitUntil: "networkidle", timeout: 120000
+      waitUntil: "domcontentloaded", timeout: 120000
     });
 
     await page.waitForTimeout(8000);
@@ -229,7 +229,7 @@ async function scrapePopularMusic(region = "United States", time = 30) {
 
     console.log("🌐 Opening TikTok Music Page...");
     await page.goto("https://ads.tiktok.com/business/creativecenter/inspiration/popular/music/pc/en", {
-      waitUntil: "networkidle", timeout: 120000
+      waitUntil: "domcontentloaded", timeout: 120000
     });
     await page.waitForTimeout(8000);
 
