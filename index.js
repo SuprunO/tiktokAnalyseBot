@@ -361,30 +361,23 @@ bot.on("message", async (msg) => {
   const text = msg.text?.trim();
 
   if (!text) return;
-
-  // Ігноруємо команди, їх обробляють bot.onText
   if (text.startsWith("/")) return;
 
   // -------------------------------
-  // Обробка запиту на ключове слово
+  // Вибір ключового слова з таблиці
   // -------------------------------
-  if (userStates[chatId]?.waitingForKeyword) {
-    userStates[chatId] = {};
-    const keyword = text;
+  if (userStates[chatId]?.waitingForKeywordPick) {
+    const selected = parseInt(text);
+    const keywords = userStates[chatId].keywordsList;
 
-    await bot.sendMessage(chatId, `🔎 Шукаю за ключовим словом: "${keyword}"... Це може зайняти 30-60 секунд.`);
-
-    // 1️⃣ Скрейпінг з TikTok Creative Center
-    const results = await scrapeTikTokKeywordInsights(keyword);
-
-    if (results.length) {
-      await bot.sendMessage(chatId, "✅ Знайдено дані в Creative Center:\n\n" + formatTable(results));
-    } else {
-      await bot.sendMessage(chatId, "⚠️ Немає даних у Creative Center.");
+    if (!selected || selected < 1 || selected > keywords.length) {
+      await bot.sendMessage(chatId, "❗ Введіть номер із таблиці (наприклад 1 або 2):");
+      return;
     }
 
-    // 2️⃣ Додатково GPT-ідея
-    await bot.sendMessage(chatId, "🧠 Генерую також ідею з GPT...");
+    const keyword = keywords[selected - 1];
+    userStates[chatId] = {};
+    await bot.sendMessage(chatId, `🧠 Генерую GPT-ідею для: "${keyword}"...`);
 
     const prompt = `
 Тема: "${keyword}"
@@ -394,7 +387,7 @@ bot.on("message", async (msg) => {
 4️⃣ 🏷️ 5-7 хештегів українською
 `;
 
-    const fallbackResponse = await openai.chat.completions.create({
+    const gptResponse = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
         { role: "system", content: "Ти досвідчений маркетолог і TikTok-креатор. Відповідай українською мовою." },
@@ -403,7 +396,37 @@ bot.on("message", async (msg) => {
       max_tokens: 500,
     });
 
-    await bot.sendMessage(chatId, fallbackResponse.choices[0].message.content);
+    await bot.sendMessage(chatId, gptResponse.choices[0].message.content);
+    return;
+  }
+
+  // -------------------------------
+  // Обробка /keywords: показ таблиці і очікування номера
+  // -------------------------------
+  if (userStates[chatId]?.waitingForKeyword) {
+    userStates[chatId] = {};
+    const keyword = text;
+
+    await bot.sendMessage(chatId, `🔎 Шукаю за ключовим словом: "${keyword}"... Це може зайняти 30-60 секунд.`);
+    const results = await scrapeTikTokKeywordInsights(keyword);
+
+    if (!results.length) {
+      await bot.sendMessage(chatId, "⚠️ Немає даних у Creative Center.");
+      return;
+    }
+
+    await bot.sendMessage(chatId, "✅ Знайдено дані в Creative Center:\n\n" + formatTable(results));
+    userStates[chatId] = {
+      waitingForKeywordPick: true,
+      keywordsList: results.slice(0, 5).map(i => i.keyword)
+    };
+    await bot.sendMessage(chatId, "✏️ Введіть номер з таблиці для генерації ідеї (наприклад 1 або 2):");
+    return;
+  }
+
+  if (text === "/keywords") {
+    userStates[chatId] = { waitingForKeyword: true };
+    await bot.sendMessage(chatId, "✏️ Введіть ключове слово для пошуку:");
     return;
   }
 
@@ -420,6 +443,12 @@ bot.on("message", async (msg) => {
     await bot.sendMessage(chatId, `🔎 Збираю хештеги за ${period} днів...`);
     const hashtags = await scrapeTikTokHashtagInsights(period);
     await bot.sendMessage(chatId, formatHashtagList(hashtags));
+    return;
+  }
+
+  if (text === "/hashtags") {
+    userStates[chatId] = { waitingForPeriodForHashtags: true };
+    await bot.sendMessage(chatId, "✏️ Вкажіть період (7, 30 або 120):");
     return;
   }
 
@@ -448,7 +477,13 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  // Якщо не впізнали повідомлення
+  if (text === "/tracks") {
+    userStates[chatId] = { waitingForRegionForTracks: true };
+    await bot.sendMessage(chatId, "✏️ Вкажіть регіон (наприклад United States):");
+    return;
+  }
+
   await bot.sendMessage(chatId, "❗ Не зрозумів команду. Оберіть /start для меню.");
 });
+
 
