@@ -318,9 +318,29 @@ function formatMusicList(data) {
 // ==============================
 // BOT COMMANDS & MESSAGE HANDLER
 // ==============================
-bot.onText(/\/help/, (msg) => {
+
+bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
-  bot.sendMessage(chatId, `Ось доступні команди:
+  userStates[chatId] = {};
+  await bot.sendMessage(chatId, `Привіт! Я бот для TikTok-аналітики.
+
+✅ /keywords – пошук ідей за ключовим словом
+✅ /hashtags – популярні хештеги
+✅ /tracks – популярна музика
+✅ /help – допомога з командами`, {
+    reply_markup: {
+      keyboard: [
+        [{ text: "/keywords" }, { text: "/hashtags" }, { text: "/tracks" }],
+        [{ text: "/help" }]
+      ],
+      resize_keyboard: true
+    }
+  });
+});
+
+bot.onText(/\/help/, async (msg) => {
+  const chatId = msg.chat.id;
+  await bot.sendMessage(chatId, `Ось доступні команди:
 
 ✅ /keywords – пошук ідей за ключовим словом
 ✅ /hashtags – популярні хештеги
@@ -339,30 +359,34 @@ bot.onText(/\/help/, (msg) => {
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim();
-  if (!text || text.startsWith("/start")) return;
 
- // -------------------------------
-// Обробка запиту на ключове слово
-// -------------------------------
-if (userStates[chatId]?.waitingForKeyword) {
-  userStates[chatId] = {};
-  const keyword = text;
+  if (!text) return;
 
-  await bot.sendMessage(chatId, `🔎 Шукаю за ключовим словом: "${keyword}"... Це може зайняти 30-60 секунд.`);
+  // Ігноруємо команди, їх обробляють bot.onText
+  if (text.startsWith("/")) return;
 
-  // 1️⃣ Скрейпінг з TikTok Creative Center
-  const results = await scrapeTikTokKeywordInsights(keyword);
+  // -------------------------------
+  // Обробка запиту на ключове слово
+  // -------------------------------
+  if (userStates[chatId]?.waitingForKeyword) {
+    userStates[chatId] = {};
+    const keyword = text;
 
-  if (results.length) {
-    await bot.sendMessage(chatId, "✅ Знайдено дані в Creative Center:\n\n" + formatTable(results));
-  } else {
-    await bot.sendMessage(chatId, "⚠️ Немає даних у Creative Center.");
-  }
+    await bot.sendMessage(chatId, `🔎 Шукаю за ключовим словом: "${keyword}"... Це може зайняти 30-60 секунд.`);
 
-  // 2️⃣ Додатково GPT-ідея
-  await bot.sendMessage(chatId, "🧠 Генерую також ідею з GPT...");
+    // 1️⃣ Скрейпінг з TikTok Creative Center
+    const results = await scrapeTikTokKeywordInsights(keyword);
 
-  const prompt = `
+    if (results.length) {
+      await bot.sendMessage(chatId, "✅ Знайдено дані в Creative Center:\n\n" + formatTable(results));
+    } else {
+      await bot.sendMessage(chatId, "⚠️ Немає даних у Creative Center.");
+    }
+
+    // 2️⃣ Додатково GPT-ідея
+    await bot.sendMessage(chatId, "🧠 Генерую також ідею з GPT...");
+
+    const prompt = `
 Тема: "${keyword}"
 1️⃣ 📌 Слово
 2️⃣ 🎥 Сценарій
@@ -370,25 +394,16 @@ if (userStates[chatId]?.waitingForKeyword) {
 4️⃣ 🏷️ 5-7 хештегів українською
 `;
 
-  const fallbackResponse = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo",
-    messages: [
-      { role: "system", content: "Ти досвідчений маркетолог і TikTok-креатор. Відповідай українською мовою." },
-      { role: "user", content: prompt },
-    ],
-    max_tokens: 500,
-  });
+    const fallbackResponse = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        { role: "system", content: "Ти досвідчений маркетолог і TikTok-креатор. Відповідай українською мовою." },
+        { role: "user", content: prompt },
+      ],
+      max_tokens: 500,
+    });
 
-  await bot.sendMessage(chatId, fallbackResponse.choices[0].message.content);
-  return;
-}
-
-  // -------------------------------
-  // Обробка вибору /keywords
-  // -------------------------------
-  if (text === "/keywords") {
-    userStates[chatId] = { waitingForKeyword: true };
-    await bot.sendMessage(chatId, "✏️ Введіть ключове слово для пошуку:");
+    await bot.sendMessage(chatId, fallbackResponse.choices[0].message.content);
     return;
   }
 
@@ -405,12 +420,6 @@ if (userStates[chatId]?.waitingForKeyword) {
     await bot.sendMessage(chatId, `🔎 Збираю хештеги за ${period} днів...`);
     const hashtags = await scrapeTikTokHashtagInsights(period);
     await bot.sendMessage(chatId, formatHashtagList(hashtags));
-    return;
-  }
-
-  if (text === "/hashtags") {
-    userStates[chatId] = { waitingForPeriodForHashtags: true };
-    await bot.sendMessage(chatId, "✏️ Вкажіть період (7, 30 або 120):");
     return;
   }
 
@@ -439,14 +448,7 @@ if (userStates[chatId]?.waitingForKeyword) {
     return;
   }
 
-  if (text === "/tracks") {
-    userStates[chatId] = { waitingForRegionForTracks: true };
-    await bot.sendMessage(chatId, "✏️ Вкажіть регіон (наприклад United States):");
-    return;
-  }
-
-  // -------------------------------
-  // Якщо команда не відома
-  // -------------------------------
+  // Якщо не впізнали повідомлення
   await bot.sendMessage(chatId, "❗ Не зрозумів команду. Оберіть /start для меню.");
 });
+
