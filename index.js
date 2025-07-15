@@ -326,9 +326,13 @@ bot.onText(/\/start/, (msg) => {
 
 ✅ /keywords – пошук ідей за ключовим словом
 ✅ /hashtags – популярні хештеги
-✅ /tracks – популярна музика`, {
+✅ /tracks – популярна музика
+✅ /help – допомога з командами`, {
     reply_markup: {
-      keyboard: [[{ text: "/keywords" }, { text: "/hashtags" }, { text: "/tracks" }]],
+ keyboard: [
+      [{ text: "/keywords" }, { text: "/hashtags" }, { text: "/tracks" }],
+      [{ text: "/help" }]
+    ],
       resize_keyboard: true
     }
   });
@@ -338,10 +342,7 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim();
   if (!text || text.startsWith("/start")) return;
-
-  // -------------------------------
-  // Обробка запиту на ключове слово
-  // -------------------------------
+  
  // -------------------------------
 // Обробка запиту на ключове слово
 // -------------------------------
