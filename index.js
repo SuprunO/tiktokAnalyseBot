@@ -359,13 +359,14 @@ bot.onText(/\/help/, async (msg) => {
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim();
-
   if (!text) return;
-  if (text.startsWith("/")) return;
 
-  // -------------------------------
-  // Вибір ключового слова з таблиці
-  // -------------------------------
+  const lower = text.toLowerCase();
+
+  // ----------------------------------------
+  // 1️⃣ Спочатку: перевірка на стани діалогу
+  // ----------------------------------------
+
   if (userStates[chatId]?.waitingForKeywordPick) {
     const selected = parseInt(text);
     const keywords = userStates[chatId].keywordsList;
@@ -400,9 +401,6 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  // -------------------------------
-  // Обробка /keywords: показ таблиці і очікування номера
-  // -------------------------------
   if (userStates[chatId]?.waitingForKeyword) {
     userStates[chatId] = {};
     const keyword = text;
@@ -424,15 +422,6 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  if (text === "/keywords") {
-    userStates[chatId] = { waitingForKeyword: true };
-    await bot.sendMessage(chatId, "✏️ Введіть ключове слово для пошуку:");
-    return;
-  }
-
-  // -------------------------------
-  // Обробка періоду для хештегів
-  // -------------------------------
   if (userStates[chatId]?.waitingForPeriodForHashtags) {
     const period = parseInt(text, 10);
     if (![7, 30, 120].includes(period)) {
@@ -446,15 +435,6 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  if (text === "/hashtags") {
-    userStates[chatId] = { waitingForPeriodForHashtags: true };
-    await bot.sendMessage(chatId, "✏️ Вкажіть період (7, 30 або 120):");
-    return;
-  }
-
-  // -------------------------------
-  // Обробка треків
-  // -------------------------------
   if (userStates[chatId]?.waitingForRegionForTracks) {
     userStates[chatId].region = text;
     userStates[chatId].waitingForPeriodForTracks = true;
@@ -477,13 +457,68 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  if (text === "/tracks") {
+  // ----------------------------------------
+  // 2️⃣ Команди (з / або без слеша)
+  // ----------------------------------------
+
+  if (["/start", "start"].includes(lower)) {
+    userStates[chatId] = {};
+    await bot.sendMessage(chatId, `Привіт! Я бот для TikTok-аналітики.
+
+✅ /keywords – пошук ідей за ключовим словом
+✅ /hashtags – популярні хештеги
+✅ /tracks – популярна музика
+✅ /help – допомога з командами`, {
+      reply_markup: {
+        keyboard: [
+          [{ text: "/keywords" }, { text: "/hashtags" }, { text: "/tracks" }],
+          [{ text: "/help" }]
+        ],
+        resize_keyboard: true
+      }
+    });
+    return;
+  }
+
+  if (["/help", "help"].includes(lower)) {
+    await bot.sendMessage(chatId, `Ось доступні команди:
+
+✅ /keywords – пошук ідей за ключовим словом
+✅ /hashtags – популярні хештеги
+✅ /tracks – популярна музика
+✅ /help – допомога з командами`, {
+      reply_markup: {
+        keyboard: [
+          [{ text: "/keywords" }, { text: "/hashtags" }, { text: "/tracks" }],
+          [{ text: "/help" }]
+        ],
+        resize_keyboard: true
+      }
+    });
+    return;
+  }
+
+  if (["/keywords", "keywords"].includes(lower)) {
+    userStates[chatId] = { waitingForKeyword: true };
+    await bot.sendMessage(chatId, "✏️ Введіть ключове слово для пошуку:");
+    return;
+  }
+
+  if (["/hashtags", "hashtags"].includes(lower)) {
+    userStates[chatId] = { waitingForPeriodForHashtags: true };
+    await bot.sendMessage(chatId, "✏️ Вкажіть період (7, 30 або 120):");
+    return;
+  }
+
+  if (["/tracks", "tracks"].includes(lower)) {
     userStates[chatId] = { waitingForRegionForTracks: true };
     await bot.sendMessage(chatId, "✏️ Вкажіть регіон (наприклад United States):");
     return;
   }
 
+  // ----------------------------------------
+  // 3️⃣ Якщо нічого не підійшло
+  // ----------------------------------------
+
   await bot.sendMessage(chatId, "❗ Не зрозумів команду. Оберіть /start для меню.");
 });
-
-
