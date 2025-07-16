@@ -161,7 +161,7 @@ async function scrapeTikTokHashtagInsights(period = 30) {
       waitUntil: "domcontentloaded", timeout: 120000
     });
 
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(12000);
 
     console.log(`🟠 Selecting period: ${period} days`);
     await page.waitForSelector('[id="hashtagPeriodSelect"]', { timeout: 10000 });
