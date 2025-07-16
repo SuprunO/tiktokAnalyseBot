@@ -39,14 +39,13 @@ const userStates = {};
 if (RENDER_EXTERNAL_URL) {
   console.log("🟢 Running in Webhook mode");
   bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
-  bot.setWebHook(`${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`).then(() =>
-    console.log(`✅ Webhook set to ${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`)
-  ).catch(console.error);
 
+  // Цей маршрут треба оголосити вже тут
   app.post(`/bot${TELEGRAM_TOKEN}`, (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
   });
+
 } else {
   console.log("🟠 Running in Polling mode");
   bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
@@ -55,7 +54,15 @@ if (RENDER_EXTERNAL_URL) {
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Express server listening on port ${PORT}`);
+
+  // ВАЖЛИВО: викликаємо setWebHook тільки тепер, коли сервер точно слухає
+  if (RENDER_EXTERNAL_URL) {
+    bot.setWebHook(`${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`)
+      .then(() => console.log(`✅ Webhook set to ${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`))
+      .catch(console.error);
+  }
 });
+
 
 // ==============================
 // HELPERS
