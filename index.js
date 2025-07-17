@@ -18,19 +18,19 @@ if (!TELEGRAM_TOKEN || !OPENAI_KEY) {
 }
 
 // ==============================
-// EXPRESS APP
+// EXPRESS APP SETUP
 // ==============================
 const app = express();
 app.use(express.json());
 app.get("/", (req, res) => res.send("✅ Bot is running."));
 
 // ==============================
-// OPENAI
+// OPENAI CLIENT
 // ==============================
 const openai = new OpenAI({ apiKey: OPENAI_KEY });
 
 // ==============================
-// TELEGRAM BOT
+// TELEGRAM BOT SETUP
 // ==============================
 let bot;
 let activeScrapes = 0;
@@ -39,13 +39,10 @@ const userStates = {};
 if (RENDER_EXTERNAL_URL) {
   console.log("🟢 Running in Webhook mode");
   bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
-
-  // Цей маршрут треба оголосити вже тут
   app.post(`/bot${TELEGRAM_TOKEN}`, (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
   });
-
 } else {
   console.log("🟠 Running in Polling mode");
   bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
@@ -54,51 +51,120 @@ if (RENDER_EXTERNAL_URL) {
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Express server listening on port ${PORT}`);
-
-  // ВАЖЛИВО: викликаємо setWebHook тільки тепер, коли сервер точно слухає
   if (RENDER_EXTERNAL_URL) {
-    bot.setWebHook(`${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`)
-      .then(() => console.log(`✅ Webhook set to ${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`))
+    bot
+      .setWebHook(`${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`)
+      .then(() =>
+        console.log(
+          `✅ Webhook set to ${RENDER_EXTERNAL_URL}/bot${TELEGRAM_TOKEN}`
+        )
+      )
       .catch(console.error);
   }
 });
 
-
 // ==============================
 // HELPERS
 // ==============================
-function randomDelay(min = 1000, max = 3000) {
-  return new Promise(resolve => setTimeout(resolve, Math.random() * (max - min) + min));
-}
-
 async function cleanupTempFiles() {
-  try {
-    const files = ["captcha_detected.png", "error_screenshot.png"];
-    for (const file of files) {
-      try { await fs.unlink(file); } catch (e) { }
-    }
-  } catch (e) {
-    console.error("Cleanup error:", e);
+  const files = ["captcha_detected.png", "error_screenshot.png"];
+  for (const file of files) {
+    try {
+      await fs.unlink(file);
+    } catch {}
   }
 }
 
+function isValidPeriod(value) {
+  return [7, 30, 120].includes(value);
+}
+
+function formatTable(data) {
+  if (!data.length) return "❗ Немає даних у Creative Center.";
+  return data
+    .slice(0, 5)
+    .map(
+      (item, idx) =>
+        `#${idx + 1}\nСлово: ${item.keyword}\nРанг: ${
+          item.rank
+        }\nПопулярність: ${item.popularity}\nЗміна популярності: ${
+          item.popularityChange
+        }\nCTR: ${item.ctr}\nCVR: ${item.cvr}\nCPA: ${
+          item.cpa
+        }\nContent Gap Score: ${item.contentGapScore}\n`
+    )
+    .join("\n");
+}
+
+function formatHashtagList(data) {
+  if (!data.length) return "❗ Хештеги не знайдено.";
+  return data
+    .slice(0, 20)
+    .map(
+      (h) =>
+        `#${h.hashtag}\nРанг: ${h.rank}\nПостів: ${h.posts.toLocaleString()}`
+    )
+    .join("\n\n");
+}
+
+function formatMusicList(data) {
+  if (!data.length) return "❗ Треки не знайдено.";
+  return data
+    .slice(0, 20)
+    .map((m) => `#${m.rank}: "${m.song}" – ${m.artist}`)
+    .join("\n\n");
+}
+
 // ==============================
-// SCRAPER: KEYWORD INSIGHTS
+// SCRAPER FUNCTIONS
 // ==============================
-async function scrapeTikTokKeywordInsights(keyword) {
-  if (activeScrapes >= MAX_CONCURRENT_SCRAPES) throw new Error("Too many concurrent scrapes.");
+
+async function scrapeTikTokKeywordInsights(keyword, period = 7) {
+  if (activeScrapes >= MAX_CONCURRENT_SCRAPES)
+    throw new Error("Too many concurrent scrapes.");
   activeScrapes++;
   let browser;
   try {
-    browser = await chromium.launch({ headless: false, args: ["--no-sandbox"] });
+    browser = await chromium.launch({
+      headless: false,
+      args: ["--no-sandbox"],
+    });
     const page = await browser.newPage();
 
     console.log("🌐 Opening TikTok Keyword Page...");
-    await page.goto("https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en", {
-      waitUntil: "domcontentloaded", timeout: 120000
-    });
-    await page.waitForTimeout(8000);
+    await page.goto(
+      "https://ads.tiktok.com/business/creativecenter/keyword-insights/pc/en",
+      {
+        waitUntil: "domcontentloaded",
+        timeout: 120000,
+      }
+    );
+    await page.waitForTimeout(12000);
 
+    // Вибір періоду
+    const periodMap = {
+      7: "Last 7 days",
+      30: "Last 30 days",
+      120: "Last 120 days",
+    };
+    const periodText = periodMap[period] || "Last 7 days";
+
+    console.log(`🟠 Selecting period: ${period} days`);
+    await page.waitForSelector('[id="keywordPeriod"]', {
+      timeout: 10000,
+    });
+    await page.click('[id="keywordPeriod"]');
+    await page.waitForTimeout(2000);
+
+    const option = await page.$(`text="Last ${period} days"`);
+    if (option) {
+      await option.click();
+    } else {
+      console.warn(`⚠️ Period option not found, using default`);
+    }
+    await page.waitForTimeout(2000);
+
+    // Пошук ключового слова
     console.log(`⌨️ Typing keyword: ${keyword}...`);
     await page.fill('input[placeholder="Search by keyword"]', keyword);
     await page.keyboard.press("Enter");
@@ -108,8 +174,8 @@ async function scrapeTikTokKeywordInsights(keyword) {
 
     const data = await page.evaluate(() => {
       const rows = document.querySelectorAll(".byted-Table-Body tr");
-      return Array.from(rows).map(row => {
-        const cells = Array.from(row.querySelectorAll("td, th")).map(td =>
+      return Array.from(rows).map((row) => {
+        const cells = Array.from(row.querySelectorAll("td, th")).map((td) =>
           td.innerText.trim()
         );
         return {
@@ -126,10 +192,15 @@ async function scrapeTikTokKeywordInsights(keyword) {
 
     if (!data.length) throw new Error("No data found in table");
 
-    const processed = data.map(item => {
-      const ctrVal = parseFloat(item.ctr.replace("%", "").replace(",", ".")) || 0.01;
-      const cpaVal = parseFloat(item.cpa.replace(/[^\d.,]/g, "").replace(",", ".")) || 0.01;
-      const popChangeVal = parseFloat(item.popularityChange.replace("%", "").replace(",", ".")) || 0;
+    // Обробка
+    const processed = data.map((item) => {
+      const ctrVal =
+        parseFloat(item.ctr.replace("%", "").replace(",", ".")) || 0.01;
+      const cpaVal =
+        parseFloat(item.cpa.replace(/[^\d.,]/g, "").replace(",", ".")) || 0.01;
+      const popChangeVal =
+        parseFloat(item.popularityChange.replace("%", "").replace(",", ".")) ||
+        0;
       const score = popChangeVal * (cpaVal / ctrVal);
       return { ...item, contentGapScore: Number(score.toFixed(2)) };
     });
@@ -145,26 +216,33 @@ async function scrapeTikTokKeywordInsights(keyword) {
   }
 }
 
-// ==============================
-// SCRAPER: HASHTAG INSIGHTS
-// ==============================
 async function scrapeTikTokHashtagInsights(period = 30) {
-  if (activeScrapes >= MAX_CONCURRENT_SCRAPES) throw new Error("Too many concurrent scrapes.");
+  if (activeScrapes >= MAX_CONCURRENT_SCRAPES)
+    throw new Error("Too many concurrent scrapes.");
   activeScrapes++;
   let browser;
   try {
-    browser = await chromium.launch({ headless: false, args: ["--no-sandbox"] });
+    browser = await chromium.launch({
+      headless: false,
+      args: ["--no-sandbox"],
+    });
     const page = await browser.newPage();
 
     console.log("🌐 Opening TikTok Hashtag Page...");
-    await page.goto("https://ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag/pc/en", {
-      waitUntil: "domcontentloaded", timeout: 120000
-    });
+    await page.goto(
+      "https://ads.tiktok.com/business/creativecenter/inspiration/popular/hashtag/pc/en",
+      {
+        waitUntil: "domcontentloaded",
+        timeout: 120000,
+      }
+    );
 
     await page.waitForTimeout(12000);
 
     console.log(`🟠 Selecting period: ${period} days`);
-    await page.waitForSelector('[id="hashtagPeriodSelect"]', { timeout: 10000 });
+    await page.waitForSelector('[id="hashtagPeriodSelect"]', {
+      timeout: 10000,
+    });
     await page.click('[id="hashtagPeriodSelect"]');
     await page.waitForTimeout(2000);
 
@@ -175,9 +253,11 @@ async function scrapeTikTokHashtagInsights(period = 30) {
     await page.waitForTimeout(5000);
 
     for (let i = 0; i < 15; i++) {
-      const seeMoreBtn = await page.$('[data-testid=cc_contentArea_viewmore_btn]');
+      const seeMoreBtn = await page.$(
+        "[data-testid=cc_contentArea_viewmore_btn]"
+      );
       if (!seeMoreBtn) break;
-      if (await seeMoreBtn.isVisible() && await seeMoreBtn.isEnabled()) {
+      if ((await seeMoreBtn.isVisible()) && (await seeMoreBtn.isEnabled())) {
         await seeMoreBtn.click();
         await page.waitForTimeout(4000);
       } else break;
@@ -193,24 +273,35 @@ async function scrapeTikTokHashtagInsights(period = 30) {
 
     return await page.evaluate(() => {
       const results = [];
-      document.querySelectorAll('a[class*="container"]').forEach((card, idx) => {
-        const rankEl = card.querySelector('span[class*="rankingIndex"]');
-        const nameEl = card.querySelector('span[class*="titleText"]');
-        let posts = 0;
-        const postTextEl = Array.from(card.querySelectorAll('*')).find(el =>
-          /posts$/i.test(el.textContent.trim())
-        );
-        if (postTextEl) {
-          let text = postTextEl.textContent.trim().toUpperCase().replace(/\s+/g, '').replace('POSTS', '');
-          if (text.endsWith('K')) posts = parseFloat(text) * 1000;
-          else if (text.endsWith('M')) posts = parseFloat(text) * 1e6;
-          else if (text.endsWith('B')) posts = parseFloat(text) * 1e9;
-          else posts = parseInt(text, 10) || 0;
-        }
-        const rank = rankEl ? parseInt(rankEl.textContent.trim(), 10) : idx + 1;
-        const hashtag = nameEl ? nameEl.textContent.trim().replace(/^#/, '') : '';
-        if (hashtag) results.push({ rank, hashtag, posts: Math.round(posts) });
-      });
+      document
+        .querySelectorAll('a[class*="container"]')
+        .forEach((card, idx) => {
+          const rankEl = card.querySelector('span[class*="rankingIndex"]');
+          const nameEl = card.querySelector('span[class*="titleText"]');
+          let posts = 0;
+          const postTextEl = Array.from(card.querySelectorAll("*")).find((el) =>
+            /posts$/i.test(el.textContent.trim())
+          );
+          if (postTextEl) {
+            let text = postTextEl.textContent
+              .trim()
+              .toUpperCase()
+              .replace(/\s+/g, "")
+              .replace("POSTS", "");
+            if (text.endsWith("K")) posts = parseFloat(text) * 1000;
+            else if (text.endsWith("M")) posts = parseFloat(text) * 1e6;
+            else if (text.endsWith("B")) posts = parseFloat(text) * 1e9;
+            else posts = parseInt(text, 10) || 0;
+          }
+          const rank = rankEl
+            ? parseInt(rankEl.textContent.trim(), 10)
+            : idx + 1;
+          const hashtag = nameEl
+            ? nameEl.textContent.trim().replace(/^#/, "")
+            : "";
+          if (hashtag)
+            results.push({ rank, hashtag, posts: Math.round(posts) });
+        });
       return results;
     });
   } catch (e) {
@@ -223,11 +314,9 @@ async function scrapeTikTokHashtagInsights(period = 30) {
   }
 }
 
-// ==============================
-// SCRAPER: POPULAR MUSIC
-// ==============================
 async function scrapePopularMusic(region = "United States", time = 30) {
-  if (activeScrapes >= MAX_CONCURRENT_SCRAPES) throw new Error("Too many concurrent scrapes.");
+  if (activeScrapes >= MAX_CONCURRENT_SCRAPES)
+    throw new Error("Too many concurrent scrapes.");
   activeScrapes++;
   let browser;
   try {
@@ -235,19 +324,28 @@ async function scrapePopularMusic(region = "United States", time = 30) {
     const page = await browser.newPage();
 
     console.log("🌐 Opening TikTok Music Page...");
-    await page.goto("https://ads.tiktok.com/business/creativecenter/inspiration/popular/music/pc/en", {
-      waitUntil: "domcontentloaded", timeout: 120000
-    });
+    await page.goto(
+      "https://ads.tiktok.com/business/creativecenter/inspiration/popular/music/pc/en",
+      {
+        waitUntil: "domcontentloaded",
+        timeout: 120000,
+      }
+    );
     await page.waitForTimeout(8000);
 
     console.log("🟠 Selecting region...");
-    const regionTrigger = await page.$('div[class*=index-mobile_locationSelectContainer]');
+    const regionTrigger = await page.$(
+      "div[class*=index-mobile_locationSelectContainer]"
+    );
     if (regionTrigger) {
       await regionTrigger.click();
       await page.waitForTimeout(2000);
-      await page.fill('input[placeholder="Start typing or select from the list"]', region);
-      await page.keyboard.press('ArrowDown');
-      await page.keyboard.press('Enter');
+      await page.fill(
+        'input[placeholder="Start typing or select from the list"]',
+        region
+      );
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
       console.log(`✅ Region set to ${region}`);
     } else console.warn("⚠️ Region dropdown not found.");
 
@@ -256,8 +354,14 @@ async function scrapePopularMusic(region = "United States", time = 30) {
     await selectTime(page, time);
 
     for (let i = 0; i < 15; i++) {
-      const seeMoreBtn = await page.$('[data-testid="cc_contentArea_viewmore_btn"]>div');
-      if (seeMoreBtn && await seeMoreBtn.isVisible() && await seeMoreBtn.isEnabled()) {
+      const seeMoreBtn = await page.$(
+        '[data-testid="cc_contentArea_viewmore_btn"]>div'
+      );
+      if (
+        seeMoreBtn &&
+        (await seeMoreBtn.isVisible()) &&
+        (await seeMoreBtn.isEnabled())
+      ) {
         await seeMoreBtn.click();
         await page.waitForTimeout(4000);
       }
@@ -267,12 +371,25 @@ async function scrapePopularMusic(region = "United States", time = 30) {
 
     return await page.evaluate(() => {
       const results = [];
-      document.querySelectorAll('div[class*="cardWrapper"]').forEach((card, idx) => {
-        const rank = parseInt(card.querySelector('span[class*="rankingIndex"]')?.textContent.trim()) || idx + 1;
-        const song = card.querySelector('span[class*="musicName"]')?.textContent.trim() || '';
-        const artist = card.querySelector('span[class*="autherName"]')?.textContent.trim() || '';
-        if (song && artist) results.push({ rank, song, artist });
-      });
+      document
+        .querySelectorAll('div[class*="cardWrapper"]')
+        .forEach((card, idx) => {
+          const rank =
+            parseInt(
+              card
+                .querySelector('span[class*="rankingIndex"]')
+                ?.textContent.trim()
+            ) || idx + 1;
+          const song =
+            card
+              .querySelector('span[class*="musicName"]')
+              ?.textContent.trim() || "";
+          const artist =
+            card
+              .querySelector('span[class*="autherName"]')
+              ?.textContent.trim() || "";
+          if (song && artist) results.push({ rank, song, artist });
+        });
       return results;
     });
   } catch (e) {
@@ -288,7 +405,9 @@ async function scrapePopularMusic(region = "United States", time = 30) {
 async function selectTime(page, time) {
   console.log(`🟠 Selecting time: Last ${time} days`);
   try {
-    await page.waitForSelector('[data-testid="cc_single_select_undefined"]', { timeout: 10000 });
+    await page.waitForSelector('[data-testid="cc_single_select_undefined"]', {
+      timeout: 10000,
+    });
     await page.click('[data-testid="cc_single_select_undefined"]');
     await page.waitForTimeout(2000);
     let option = await page.$(`text="Last ${time} Days"`);
@@ -301,117 +420,73 @@ async function selectTime(page, time) {
 }
 
 // ==============================
-// FORMATTERS
+// STATE-BASED HANDLERS
 // ==============================
-function formatTable(data) {
-  if (!data.length) return "❗ Немає даних у Creative Center.";
-  return data
-    .slice(0, 5)
-    .map((item, idx) =>
-      `#${idx + 1}\nСлово: ${item.keyword}\nРанг: ${item.rank}\nПопулярність: ${item.popularity}\nЗміна популярності: ${item.popularityChange}\nCTR: ${item.ctr}\nCVR: ${item.cvr}\nCPA: ${item.cpa}\nContent Gap Score: ${item.contentGapScore}\n`
-    ).join("\n");
+
+async function handleKeywordPeriod(chatId, text) {
+  const period = parseInt(text, 10);
+  if (!isValidPeriod(period)) {
+    await bot.sendMessage(chatId, "❗ Вкажіть лише 7, 30 або 120:");
+    return false;
+  }
+  userStates[chatId] = { periodForKeyword: period, waitingForKeyword: true };
+  await bot.sendMessage(chatId, "🔤 Введіть ключове слово для пошуку:");
+  return true;
 }
 
-function formatHashtagList(data) {
-  if (!data.length) return "❗ Хештеги не знайдено.";
-  return data.slice(0, 20).map(h => `#${h.hashtag}\nРанг: ${h.rank}\nПостів: ${h.posts.toLocaleString()}`).join("\n\n");
-}
+async function handleKeywordSearch(chatId, keyword) {
+  const period = userStates[chatId]?.periodForKeyword || 7;
+  userStates[chatId] = {}; // Очистити стан
 
-function formatMusicList(data) {
-  if (!data.length) return "❗ Треки не знайдено.";
-  return data.slice(0, 20).map(m => `#${m.rank}: "${m.song}" – ${m.artist}`).join("\n\n");
-}
+  await bot.sendMessage(
+    chatId,
+    `🔎 Шукаю за ключовим словом: "${keyword}" за останні ${period} днів... Це може зайняти 30-60 секунд.`
+  );
 
-// ==============================
-// BOT COMMANDS HANDLER
-// ==============================
+  const results = await scrapeTikTokKeywordInsights(keyword, period);
 
-bot.onText(/^\/start$/, async (msg) => {
-  const chatId = msg.chat.id;
-  userStates[chatId] = {};
-  await bot.sendMessage(chatId, `Привіт! Я бот для TikTok-аналітики.
-
-✅ /keywords – пошук ідей за ключовим словом
-✅ /hashtags – популярні хештеги
-✅ /tracks – популярна музика
-✅ /help – допомога з командами`, {
-    reply_markup: {
-      keyboard: [
-        [{ text: "/keywords" }, { text: "/hashtags" }, { text: "/tracks" }],
-        [{ text: "/help" }]
-      ],
-      resize_keyboard: true
-    }
-  });
-});
-
-bot.onText(/^\/help$/, async (msg) => {
-  const chatId = msg.chat.id;
-  await bot.sendMessage(chatId, `Ось доступні команди:
-
-✅ /keywords – пошук ідей за ключовим словом
-✅ /hashtags – популярні хештеги
-✅ /tracks – популярна музика
-✅ /help – допомога з командами`, {
-    reply_markup: {
-      keyboard: [
-        [{ text: "/keywords" }, { text: "/hashtags" }, { text: "/tracks" }],
-        [{ text: "/help" }]
-      ],
-      resize_keyboard: true
-    }
-  });
-});
-
-bot.onText(/^\/keywords$/, async (msg) => {
-  const chatId = msg.chat.id;
-  userStates[chatId] = { waitingForKeyword: true };
-  await bot.sendMessage(chatId, "✏️ Введіть ключове слово для пошуку:");
-});
-
-bot.onText(/^\/hashtags$/, async (msg) => {
-  const chatId = msg.chat.id;
-  userStates[chatId] = { waitingForPeriodForHashtags: true };
-  await bot.sendMessage(chatId, "✏️ Вкажіть період (7, 30 або 120):");
-});
-
-bot.onText(/^\/tracks$/, async (msg) => {
-  const chatId = msg.chat.id;
-  userStates[chatId] = { waitingForRegionForTracks: true };
-  await bot.sendMessage(chatId, "✏️ Вкажіть регіон (наприклад United States):");
-});
-
-
-// ==============================
-// BOT MESSAGE HANDLER
-// ==============================
-bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
-  const text = msg.text?.trim();
-  if (!text) return;
-
-  // ✅ Не чіпаємо команди, якщо немає активного стану
-  if (text.startsWith("/") && !userStates[chatId]) {
+  if (!results.length) {
+    await bot.sendMessage(
+      chatId,
+      `⚠️ Creative Center не знайшов результатів для: "${keyword}".`
+    );
     return;
   }
 
-  // -------------------------------
-  // KEYWORDS: вибір номера
-  // -------------------------------
-  if (userStates[chatId]?.waitingForKeywordPick) {
-    const selected = parseInt(text);
-    const keywords = userStates[chatId].keywordsList;
+  await bot.sendMessage(
+    chatId,
+    "✅ Знайдено дані в Creative Center:\n\n" + formatTable(results)
+  );
 
-    if (!selected || selected < 1 || selected > keywords.length) {
-      await bot.sendMessage(chatId, "❗ Введіть номер із таблиці (наприклад 1 або 2):");
-      return;
-    }
+  userStates[chatId] = {
+    waitingForKeywordPick: true,
+    keywordsList: results.slice(0, 5).map((i) => i.keyword),
+  };
 
-    const keyword = keywords[selected - 1];
-    userStates[chatId] = {};
-    await bot.sendMessage(chatId, `🧠 Генерую GPT-ідею для: "${keyword}"...`);
+  await bot.sendMessage(
+    chatId,
+    "✏️ Введіть номер з таблиці для генерації ідеї (наприклад 1 або 2):"
+  );
+}
 
-    const prompt = `
+async function handleKeywordPick(chatId, text) {
+  const selected = parseInt(text, 10);
+  const keywords = userStates[chatId]?.keywordsList || [];
+
+  if (!selected || selected < 1 || selected > keywords.length) {
+    await bot.sendMessage(
+      chatId,
+      "❗ Введіть номер із таблиці (наприклад 1 або 2):"
+    );
+    return;
+  }
+
+  const keyword = keywords[selected - 1];
+  userStates[chatId] = {};
+
+  await bot.sendMessage(chatId, `🧠 Генерую GPT-ідею для: "${keyword}"...`);
+
+  const prompt = `
 Тема: "${keyword}"
 1️⃣ 📌 Слово
 2️⃣ 🎥 Сценарій
@@ -419,91 +494,142 @@ bot.on("message", async (msg) => {
 4️⃣ 🏷️ 5-7 хештегів українською
 `;
 
-    const gptResponse = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        { role: "system", content: "Ти досвідчений маркетолог і TikTok-креатор. Відповідай українською мовою." },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 500,
-    });
+  const gptResponse = await openai.chat.completions.create({
+    model: "gpt-3.5-turbo",
+    messages: [
+      {
+        role: "system",
+        content:
+          "Ти досвідчений маркетолог і TikTok-креатор. Відповідай українською мовою.",
+      },
+      { role: "user", content: prompt },
+    ],
+    max_tokens: 500,
+  });
 
-    await bot.sendMessage(chatId, gptResponse.choices[0].message.content);
-    return;
+  await bot.sendMessage(chatId, gptResponse.choices[0].message.content);
+}
+
+async function handleHashtagPeriod(chatId, text) {
+  const period = parseInt(text, 10);
+  if (!isValidPeriod(period)) {
+    await bot.sendMessage(chatId, "❗ Вкажіть 7, 30 або 120:");
+    return false;
   }
+  userStates[chatId] = {};
+  await bot.sendMessage(chatId, `🔎 Збираю хештеги за ${period} днів...`);
+  const hashtags = await scrapeTikTokHashtagInsights(period);
+  await bot.sendMessage(chatId, formatHashtagList(hashtags));
+  return true;
+}
 
-  // -------------------------------
-  // KEYWORDS: введення ключового слова
-  // -------------------------------
-  if (userStates[chatId]?.waitingForKeyword) {
-    userStates[chatId] = {};
-    const keyword = text;
+async function handleTrackRegion(chatId, text) {
+  userStates[chatId] = { waitingForPeriodForTracks: true, region: text };
+  await bot.sendMessage(
+    chatId,
+    "✏️ Тепер вкажіть період (7, 30 або 120 днів):"
+  );
+}
 
-    await bot.sendMessage(chatId, `🔎 Шукаю за ключовим словом: "${keyword}"... Це може зайняти 30-60 секунд.`);
-    const results = await scrapeTikTokKeywordInsights(keyword);
+async function handleTrackPeriod(chatId, text) {
+  const period = parseInt(text, 10);
+  if (!isValidPeriod(period)) {
+    await bot.sendMessage(chatId, "❗ Вкажіть 7, 30 або 120:");
+    return false;
+  }
+  const region = userStates[chatId]?.region || "United States";
+  userStates[chatId] = {};
+  await bot.sendMessage(
+    chatId,
+    `🔎 Збираю популярну музику з ${region} за ${period} днів...`
+  );
+  const tracks = await scrapePopularMusic(region, period);
+  await bot.sendMessage(chatId, formatMusicList(tracks));
+  return true;
+}
 
-    if (!results.length) {
-      await bot.sendMessage(chatId, "⚠️ Немає даних у Creative Center.");
+// ==============================
+// COMMANDS AND MESSAGES
+// ==============================
+
+bot.onText(/\/start/, async (msg) => {
+  const chatId = msg.chat.id;
+  userStates[chatId] = {};
+  await bot.sendMessage(
+    chatId,
+    `Привіт! Я TikTok-аналітичний бот.
+
+Використовуй:
+/keywords - пошук ідей за ключовим словом
+/hashtags - трендові хештеги
+/tracks - популярна музика
+
+Вкажи команду для початку.`
+  );
+});
+
+bot.onText(/\/keywords/, async (msg) => {
+  const chatId = msg.chat.id;
+  userStates[chatId] = {};
+  await bot.sendMessage(
+    chatId,
+    "Вкажіть період для пошуку ключових слів (7, 30, 120 днів):"
+  );
+  userStates[chatId].waitingForPeriodForKeyword = true;
+});
+
+bot.onText(/\/hashtags/, async (msg) => {
+  const chatId = msg.chat.id;
+  userStates[chatId] = {};
+  await bot.sendMessage(
+    chatId,
+    "Вкажіть період для хештегів (7, 30, 120 днів):"
+  );
+  userStates[chatId].waitingForPeriodForHashtags = true;
+});
+
+bot.onText(/\/tracks/, async (msg) => {
+  const chatId = msg.chat.id;
+  userStates[chatId] = {};
+  await bot.sendMessage(
+    chatId,
+    "Вкажіть регіон (наприклад, United States, Ukraine, Russia):"
+  );
+  userStates[chatId].waitingForRegionForTracks = true;
+});
+
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const text = (msg.text || "").trim();
+
+  if (!text || text.startsWith("/")) return; // Ignore commands here
+
+  const state = userStates[chatId] || {};
+
+  try {
+    if (state.waitingForPeriodForKeyword) {
+      if (await handleKeywordPeriod(chatId, text)) return;
+    }
+    if (state.waitingForKeyword) {
+      await handleKeywordSearch(chatId, text);
       return;
     }
-
-    await bot.sendMessage(chatId, "✅ Знайдено дані в Creative Center:\n\n" + formatTable(results));
-    userStates[chatId] = {
-      waitingForKeywordPick: true,
-      keywordsList: results.slice(0, 5).map(i => i.keyword)
-    };
-    await bot.sendMessage(chatId, "✏️ Введіть номер з таблиці для генерації ідеї (наприклад 1 або 2):");
-    return;
-  }
-
-  // -------------------------------
-  // HASHTAGS
-  // -------------------------------
-  if (userStates[chatId]?.waitingForPeriodForHashtags) {
-    const period = parseInt(text, 10);
-    if (![7, 30, 120].includes(period)) {
-      await bot.sendMessage(chatId, "❗ Вкажіть 7, 30 або 120:");
+    if (state.waitingForKeywordPick) {
+      await handleKeywordPick(chatId, text);
       return;
     }
-    userStates[chatId] = {};
-    await bot.sendMessage(chatId, `🔎 Збираю хештеги за ${period} днів...`);
-    const hashtags = await scrapeTikTokHashtagInsights(period);
-    await bot.sendMessage(chatId, formatHashtagList(hashtags));
-    return;
-  }
-
-  // -------------------------------
-  // TRACKS: введення регіону
-  // -------------------------------
-  if (userStates[chatId]?.waitingForRegionForTracks) {
-    userStates[chatId].region = text;
-    userStates[chatId].waitingForPeriodForTracks = true;
-    delete userStates[chatId].waitingForRegionForTracks;
-    await bot.sendMessage(chatId, "✏️ Тепер вкажіть період (7, 30 або 120):");
-    return;
-  }
-
-  // -------------------------------
-  // TRACKS: введення періоду
-  // -------------------------------
-  if (userStates[chatId]?.waitingForPeriodForTracks) {
-    const period = parseInt(text, 10);
-    if (![7, 30, 120].includes(period)) {
-      await bot.sendMessage(chatId, "❗ Вкажіть 7, 30 або 120:");
+    if (state.waitingForPeriodForHashtags) {
+      if (await handleHashtagPeriod(chatId, text)) return;
+    }
+    if (state.waitingForRegionForTracks) {
+      await handleTrackRegion(chatId, text);
       return;
     }
-    const region = userStates[chatId].region || "United States";
-    userStates[chatId] = {};
-    await bot.sendMessage(chatId, `🔎 Збираю треки для ${region}, ${period} днів...`);
-    const music = await scrapePopularMusic(region, period);
-    await bot.sendMessage(chatId, formatMusicList(music));
-    return;
-  }
-
-  // -------------------------------
-  // Невідоме повідомлення без стану
-  // -------------------------------
-  if (!userStates[chatId]) {
-    await bot.sendMessage(chatId, "❗ Не зрозумів команду. Оберіть /start для меню.");
+    if (state.waitingForPeriodForTracks) {
+      if (await handleTrackPeriod(chatId, text)) return;
+    }
+  } catch (e) {
+    console.error("❌ Error handling message:", e);
+    await bot.sendMessage(chatId, "⚠️ Виникла помилка, спробуйте ще раз.");
   }
 });
