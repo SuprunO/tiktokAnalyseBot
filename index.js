@@ -115,6 +115,31 @@ function formatMusicList(data) {
     .join("\n\n");
 }
 
+async function waitForSelectorWithRetry(
+  page,
+  selector,
+  maxRetries = 3,
+  delay = 5000
+) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      console.log(`🔄 Attempt ${i + 1} to find selector: ${selector}`);
+      await page.waitForSelector(selector, { timeout: 10000 });
+      console.log(`✅ Selector found: ${selector}`);
+      return;
+    } catch (err) {
+      console.warn(`⚠️ Selector not found on attempt ${i + 1}`);
+      if (i < maxRetries - 1) {
+        await page.waitForTimeout(delay);
+      } else {
+        throw new Error(
+          `❌ Failed to find selector ${selector} after ${maxRetries} attempts`
+        );
+      }
+    }
+  }
+}
+
 // ==============================
 // SCRAPER FUNCTIONS
 // ==============================
@@ -150,9 +175,7 @@ async function scrapeTikTokKeywordInsights(keyword, period = 7) {
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(15000);
     console.log(`🟠 Selecting period: ${period} days`);
-    await page.waitForSelector('[id="keywordPeriod"]', {
-      timeout: 10000,
-    });
+    await waitForSelectorWithRetry(page, '[id="keywordPeriod"]'); 
     await page.click('[id="keywordPeriod"]');
     await page.waitForTimeout(2000);
 
