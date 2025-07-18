@@ -165,34 +165,45 @@ async function scrapeTikTokKeywordInsights(keyword, period = 7) {
       }
     );
 
-    // Вибір періоду
-    const periodMap = {
-      7: "Last 7 days",
-      30: "Last 30 days",
-      120: "Last 120 days",
-    };
-    const periodText = periodMap[period] || "Last 7 days";
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(15000);
-await page.waitForFunction(() => {
-  const el = document.getElementById("keywordPeriod");
-  if (!el) return false;
-  const style = window.getComputedStyle(el);
-  return style.pointerEvents !== "none" && style.visibility !== "hidden" && style.display !== "none";
-}, { timeout: 10000 });
+ // Вибір періоду
+const periodMap = {
+  7: "Last 7 days",
+  30: "Last 30 days",
+  120: "Last 120 days",
+};
+const periodText = periodMap[period] || "Last 7 days";
 
-await page.evaluate(() => {
-  document.getElementById("keywordPeriod").click();
+await page.waitForLoadState("domcontentloaded");
+await page.waitForTimeout(15000);
+
+// Спроба закрити гайд
+console.log("🧹 Trying to skip guide modal...");
+await page.click("[class*='guide-modal-footer-skip-btn']").catch(() => {
+  console.warn("⚠️ Skip guide button not found or already closed");
 });
-    await page.waitForTimeout(2000);
 
-    const option = await page.$(`text="Last ${period} days"`);
-    if (option) {
-      await option.click();
-    } else {
-      console.warn(`⚠️ Period option not found, using default`);
-    }
-    await page.waitForTimeout(2000);
+// Очікування елемента періоду
+console.log("🔍 Waiting for #keywordPeriod selector to appear...");
+try {
+  await page.waitForSelector("#keywordPeriod", { visible: true, timeout: 10000 });
+  console.log("✅ #keywordPeriod is visible, attempting to click...");
+  await page.click("#keywordPeriod");
+  console.log("🖱 Clicked #keywordPeriod successfully");
+} catch (e) {
+  console.error("❌ Failed to find or click #keywordPeriod:", e);
+}
+await page.waitForTimeout(2000);
+
+
+// Вибрати відповідний період
+const option = await page.$(`text="${periodText}"`);
+if (option) {
+  await option.click();
+} else {
+  console.warn(`⚠️ Period option not found: ${periodText}`);
+}
+await page.waitForTimeout(2000);
+
 
     // Пошук ключового слова
     console.log(`⌨️ Typing keyword: ${keyword}...`);
