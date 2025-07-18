@@ -174,9 +174,16 @@ async function scrapeTikTokKeywordInsights(keyword, period = 7) {
     const periodText = periodMap[period] || "Last 7 days";
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(15000);
-    console.log(`🟠 Selecting period: ${period} days`);
-    await waitForSelectorWithRetry(page, '[id="keywordPeriod"]'); 
-    await page.click('[id="keywordPeriod"]');
+await page.waitForFunction(() => {
+  const el = document.getElementById("keywordPeriod");
+  if (!el) return false;
+  const style = window.getComputedStyle(el);
+  return style.pointerEvents !== "none" && style.visibility !== "hidden" && style.display !== "none";
+}, { timeout: 10000 });
+
+await page.evaluate(() => {
+  document.getElementById("keywordPeriod").click();
+});
     await page.waitForTimeout(2000);
 
     const option = await page.$(`text="Last ${period} days"`);
