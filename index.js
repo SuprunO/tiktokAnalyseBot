@@ -139,7 +139,7 @@ async function scrapeTikTokKeywordInsights(keyword, period = 7) {
         timeout: 120000,
       }
     );
-    await page.waitForTimeout(12000);
+    await page.waitForTimeout(15000);
 
     // Вибір періоду
     const periodMap = {
