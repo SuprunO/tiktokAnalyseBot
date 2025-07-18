@@ -176,23 +176,57 @@ const periodText = periodMap[period] || "Last 7 days";
 await page.waitForLoadState("domcontentloaded");
 await page.waitForTimeout(15000);
 
-// Спроба закрити гайд
 console.log("🧹 Trying to skip guide modal...");
 await page.click("[class*='guide-modal-footer-skip-btn']").catch(() => {
   console.warn("⚠️ Skip guide button not found or already closed");
 });
 
-// Очікування елемента періоду
-console.log("🔍 Waiting for #keywordPeriod selector to appear...");
-try {
-  await page.waitForSelector("#keywordPeriod", { visible: true, timeout: 10000 });
-  console.log("✅ #keywordPeriod is visible, attempting to click...");
-  await page.click("#keywordPeriod");
-  console.log("🖱 Clicked #keywordPeriod successfully");
-} catch (e) {
-  console.error("❌ Failed to find or click #keywordPeriod:", e);
+console.log("🔍 Waiting for #keywordPeriod in DOM...");
+await page.waitForSelector("#keywordPeriod", { timeout: 10000 }).catch(() => {
+  throw new Error("❌ #keywordPeriod not found in DOM at all");
+});
+
+// 🧪 Перевірка стилів
+console.log("🔬 Checking #keywordPeriod styles...");
+const periodDebug = await page.evaluate(() => {
+  const el = document.getElementById("keywordPeriod");
+  if (!el) return "❌ Not found";
+  const style = window.getComputedStyle(el);
+  const rect = el.getBoundingClientRect();
+  return {
+    pointerEvents: style.pointerEvents,
+    visibility: style.visibility,
+    display: style.display,
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+  };
+});
+console.log("🧾 keywordPeriod style debug:", periodDebug);
+
+// 💾 Збереження скріншоту
+await page.screenshot({ path: "/mnt/data/render_keywordPeriod_debug.png", fullPage: true });
+console.log("📸 Screenshot saved as render_keywordPeriod_debug.png");
+
+// 🚀 Пробуємо клік
+if (
+  periodDebug.pointerEvents !== "none" &&
+  periodDebug.visibility !== "hidden" &&
+  periodDebug.display !== "none" &&
+  periodDebug.width > 0 &&
+  periodDebug.height > 0
+) {
+  console.log("🖱 Attempting to click #keywordPeriod...");
+  await page.evaluate(() => {
+    document.getElementById("keywordPeriod").scrollIntoView({ behavior: "auto", block: "center" });
+  });
+  await page.waitForTimeout(1000);
+  await page.click("#keywordPeriod", { timeout: 5000 });
+  console.log("✅ Click successful");
+} else {
+  throw new Error("❌ #keywordPeriod is not visible/clickable");
 }
-await page.waitForTimeout(2000);
 
 
 // Вибрати відповідний період
