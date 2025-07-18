@@ -554,6 +554,7 @@ async function handleTrackPeriod(chatId, text) {
 
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
+  await bot.sendMessage(chatId, "⏳ Будь ласка, зачекайте 30 секунд — сервіс запускається...");
   userStates[chatId] = {};
   await bot.sendMessage(
     chatId,
