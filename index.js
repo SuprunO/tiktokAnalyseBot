@@ -139,7 +139,6 @@ async function scrapeTikTokKeywordInsights(keyword, period = 7) {
         timeout: 120000,
       }
     );
-    await page.waitForTimeout(15000);
 
     // Вибір періоду
     const periodMap = {
@@ -148,7 +147,8 @@ async function scrapeTikTokKeywordInsights(keyword, period = 7) {
       120: "Last 120 days",
     };
     const periodText = periodMap[period] || "Last 7 days";
-
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(15000);
     console.log(`🟠 Selecting period: ${period} days`);
     await page.waitForSelector('[id="keywordPeriod"]', {
       timeout: 10000,
@@ -554,7 +554,10 @@ async function handleTrackPeriod(chatId, text) {
 
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
-  await bot.sendMessage(chatId, "⏳ Будь ласка, зачекайте 30 секунд — сервіс запускається...");
+  await bot.sendMessage(
+    chatId,
+    "⏳ Будь ласка, зачекайте 30 секунд — сервіс запускається..."
+  );
   userStates[chatId] = {};
   await bot.sendMessage(
     chatId,
