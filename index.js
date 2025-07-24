@@ -165,80 +165,85 @@ async function scrapeTikTokKeywordInsights(keyword, period = 7) {
       }
     );
 
- // Вибір періоду
-const periodMap = {
-  7: "Last 7 days",
-  30: "Last 30 days",
-  120: "Last 120 days",
-};
-const periodText = periodMap[period] || "Last 7 days";
+    // Вибір періоду
+    const periodMap = {
+      7: "Last 7 days",
+      30: "Last 30 days",
+      120: "Last 120 days",
+    };
+    const periodText = periodMap[period] || "Last 7 days";
 
-await page.waitForLoadState("domcontentloaded");
-await page.waitForTimeout(15000);
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(15000);
 
-console.log("🧹 Trying to skip guide modal...");
-await page.click("[class*='guide-modal-footer-skip-btn']").catch(() => {
-  console.warn("⚠️ Skip guide button not found or already closed");
-});
-await page.waitForTimeout(15000);
+    console.log("🧹 Trying to skip guide modal...");
+    await page.click("[class*='guide-modal-footer-skip-btn']").catch(() => {
+      console.warn("⚠️ Skip guide button not found or already closed");
+    });
+    await page.waitForTimeout(15000);
 
-console.log("🔍 Waiting for #keywordPeriod in DOM...");
-await page.waitForSelector("#keywordPeriod", { timeout: 10000 }).catch(() => {
-  throw new Error("❌ #keywordPeriod not found in DOM at all");
-});
+    console.log("🔍 Waiting for #keywordPeriod in DOM...");
+    await page
+      .waitForSelector("#keywordPeriod", { timeout: 10000 })
+      .catch(() => {
+        throw new Error("❌ #keywordPeriod not found in DOM at all");
+      });
 
-// 🧪 Перевірка стилів
-console.log("🔬 Checking #keywordPeriod styles...");
-const periodDebug = await page.evaluate(() => {
-  const el = document.getElementById("keywordPeriod");
-  if (!el) return "❌ Not found";
-  const style = window.getComputedStyle(el);
-  const rect = el.getBoundingClientRect();
-  return {
-    pointerEvents: style.pointerEvents,
-    visibility: style.visibility,
-    display: style.display,
-    top: rect.top,
-    left: rect.left,
-    width: rect.width,
-    height: rect.height,
-  };
-});
-console.log("🧾 keywordPeriod style debug:", periodDebug);
+    // 🧪 Перевірка стилів
+    console.log("🔬 Checking #keywordPeriod styles...");
+    const periodDebug = await page.evaluate(() => {
+      const el = document.getElementById("keywordPeriod");
+      if (!el) return "❌ Not found";
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return {
+        pointerEvents: style.pointerEvents,
+        visibility: style.visibility,
+        display: style.display,
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+    console.log("🧾 keywordPeriod style debug:", periodDebug);
 
-// 💾 Збереження скріншоту
-await page.screenshot({ path: "/mnt/data/render_keywordPeriod_debug.png", fullPage: true });
-console.log("📸 Screenshot saved as render_keywordPeriod_debug.png");
+    // 💾 Збереження скріншоту
+    await page.screenshot({
+      path: "/mnt/data/render_keywordPeriod_debug.png",
+      fullPage: true,
+    });
+    console.log("📸 Screenshot saved as render_keywordPeriod_debug.png");
 
-// 🚀 Пробуємо клік
-if (
-  periodDebug.pointerEvents !== "none" &&
-  periodDebug.visibility !== "hidden" &&
-  periodDebug.display !== "none" &&
-  periodDebug.width > 0 &&
-  periodDebug.height > 0
-) {
-  console.log("🖱 Attempting to click #keywordPeriod...");
-  await page.evaluate(() => {
-    document.getElementById("keywordPeriod").scrollIntoView({ behavior: "auto", block: "center" });
-  });
-  await page.waitForTimeout(1000);
-  await page.click("#keywordPeriod", { timeout: 5000 });
-  console.log("✅ Click successful");
-} else {
-  throw new Error("❌ #keywordPeriod is not visible/clickable");
-}
+    // 🚀 Пробуємо клік
+    if (
+      periodDebug.pointerEvents !== "none" &&
+      periodDebug.visibility !== "hidden" &&
+      periodDebug.display !== "none" &&
+      periodDebug.width > 0 &&
+      periodDebug.height > 0
+    ) {
+      console.log("🖱 Attempting to click #keywordPeriod...");
+      await page.evaluate(() => {
+        document
+          .getElementById("keywordPeriod")
+          .scrollIntoView({ behavior: "auto", block: "center" });
+      });
+      await page.waitForTimeout(1000);
+      await page.click("#keywordPeriod", { timeout: 5000 });
+      console.log("✅ Click successful");
+    } else {
+      throw new Error("❌ #keywordPeriod is not visible/clickable");
+    }
 
-
-// Вибрати відповідний період
-const option = await page.$(`text="${periodText}"`);
-if (option) {
-  await option.click();
-} else {
-  console.warn(`⚠️ Period option not found: ${periodText}`);
-}
-await page.waitForTimeout(2000);
-
+    // Вибрати відповідний період
+    const option = await page.$(`text="${periodText}"`);
+    if (option) {
+      await option.click();
+    } else {
+      console.warn(`⚠️ Period option not found: ${periodText}`);
+    }
+    await page.waitForTimeout(2000);
 
     // Пошук ключового слова
     console.log(`⌨️ Typing keyword: ${keyword}...`);
@@ -521,69 +526,88 @@ async function handleKeywordSearch(chatId, keyword) {
 
   const results = await scrapeTikTokKeywordInsights(keyword, period);
 
-  
-if (!results.length) {
+  if (!results.length) {
     await bot.sendMessage(
       chatId,
       `⚠️ Creative Center не знайшов результатів для: "${keyword}".`
     );
 
-    // GPT fallback
+    // GPT fallback – українські та англійські хештеги окремо
     const gpt = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
         {
           role: "system",
           content:
-            `Ти TikTok-експерт. Згенеруй 8 перспективних українських хештегів і 8 англійських` +
-            `з content gap у ніші "${keyword}". Відповідь через кому.` + `виведи іх також клаудом хештегів окремо краінською і англійською`,
+            `Ти TikTok-експерт. Згенеруй 8 перспективних українських хештегів і 8 англійських ` +
+            `з content gap у ніші "${keyword}". Спочатку дай блок "🇺🇦 Українські", потім "🇬🇧 English". Хештеги подавай через кому.`,
         },
       ],
-      max_tokens: 100,
+      max_tokens: 300,
     });
 
-    const raw = gpt.choices[0].message.content;
-    const tags = raw
-      .split(",")
-      .map((h) => h.replace("#", "").trim())
-      .filter(Boolean)
-      .slice(0, 7);
+    const raw = gpt.choices[0].message.content || "";
 
-    if (!tags.length) {
-      await bot.sendMessage(chatId, "⚠️ GPT не зміг згенерувати хештеги.");
+    const [uaBlock, enBlock] = raw.split(/🇬🇧|English/i);
+    const uaTags = (uaBlock?.match(/#\S+/g) || []).slice(0, 8);
+    const enTags = (enBlock?.match(/#\S+/g) || []).slice(0, 8);
+
+    if (!uaTags.length && !enTags.length) {
+      await bot.sendMessage(chatId, "⚠️ GPT не згенерував хештеги.");
       return;
     }
 
     userStates[chatId] = {
       waitingForKeywordPick: true,
-      keywordsList: tags,
+      keywordsList: [...uaTags, ...enTags].map((tag) => tag.replace("#", "")),
     };
 
-    await bot.sendMessage(
-      chatId,
-      `🧠 Пропоную ці хештеги:
-${tags.map((h,i)=>`${i+1}. #${h}`).join("\n")}`
-    );
-    await bot.sendMessage(chatId, "✏️ Введіть номер (1–7) для генерації ідеї:");
+    let msg = "🧠 Пропоную ці хештеги:";
+    if (uaTags.length) {
+      msg += `🇺🇦 Українські:
+${uaTags.join(" ")}
+
+`;
+    }
+    if (enTags.length) {
+      msg += `🇬🇧 English:
+${enTags.join(" ")}`;
+    }
+
+    await bot.sendMessage(chatId, msg);
+    await bot.sendMessage(chatId, "✏️ Введіть номер (1–8) для генерації ідеї:");
     return;
-}
+  }
 
-
-  await bot.sendMessage(
-    chatId,
-    "✅ Знайдено дані в Creative Center:\n\n" + formatTable(results)
-  );
-
+  const tags = results.slice(0, 5).map((i) => i.keyword);
   userStates[chatId] = {
     waitingForKeywordPick: true,
-    keywordsList: results.slice(0, 5).map((i) => i.keyword),
+    keywordsList: tags,
   };
 
   await bot.sendMessage(
     chatId,
-    "✏️ Введіть номер з таблиці для генерації ідеї (наприклад 1 або 2):"
+    `🧠 Пропоную ці хештеги:
+${tags.map((h, i) => `${i + 1}. #${h}`).join("\n")}`
   );
+  await bot.sendMessage(chatId, "✏️ Введіть номер (1–7) для генерації ідеї:");
+  return;
 }
+
+await bot.sendMessage(
+  chatId,
+  "✅ Знайдено дані в Creative Center:\n\n" + formatTable(results)
+);
+
+userStates[chatId] = {
+  waitingForKeywordPick: true,
+  keywordsList: results.slice(0, 5).map((i) => i.keyword),
+};
+
+await bot.sendMessage(
+  chatId,
+  "✏️ Введіть номер з таблиці для генерації ідеї (наприклад 1 або 2):"
+);
 
 async function handleKeywordPick(chatId, text) {
   const selected = parseInt(text, 10);
