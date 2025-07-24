@@ -538,19 +538,22 @@ async function handleKeywordSearch(chatId, keyword) {
       messages: [
         {
           role: "system",
-          content:
-            `Ти TikTok-експерт. Згенеруй 8 перспективних українських хештегів і 8 англійських ` +
-            `з content gap у ніші "${keyword}". Спочатку дай блок "🇺🇦 Українські", потім "🇬🇧 English". Хештеги подавай через кому.`,
+          content: `Ти TikTok-експерт. Згенеруй 8 перспективних українських хештегів і 8 англійських з content gap у ніші "${keyword}". 
+               Формат: спочатку блок "🇺🇦 Українські:" з 8 хештегів через кому, потім новий рядок "🇬🇧 English:" з 8 англійських хештегів через кому.`,
         },
       ],
       max_tokens: 300,
     });
 
-    const raw = gpt.choices[0].message.content || "";
+    const response = gpt.choices[0].message.content || "";
 
-    const [uaBlock, enBlock] = raw.split(/🇬🇧|English/i);
-    const uaTags = (uaBlock?.match(/#\S+/g) || []).slice(0, 8);
-    const enTags = (enBlock?.match(/#\S+/g) || []).slice(0, 8);
+    // Parse the response to extract hashtags
+    const uaPart =
+      response.split("🇺🇦 Українські:")[1]?.split("🇬🇧 English:")[0] || "";
+    const enPart = response.split("🇬🇧 English:")[1] || "";
+
+    const uaTags = uaPart.match(/#\w+/g)?.slice(0, 8) || [];
+    const enTags = enPart.match(/#\w+/g)?.slice(0, 8) || [];
 
     if (!uaTags.length && !enTags.length) {
       await bot.sendMessage(chatId, "⚠️ GPT не згенерував хештеги.");
@@ -564,14 +567,17 @@ async function handleKeywordSearch(chatId, keyword) {
 
     let msg = "🧠 Пропоную ці хештеги:";
     if (uaTags.length) {
-      msg += `\n🇺🇦 Українські:\n${uaTags.join(" ")}\n\n`;
+      msg += `\n🇺🇦 Українські:\n${uaTags.join(" ")}`;
     }
     if (enTags.length) {
-      msg += `🇬🇧 English:\n${enTags.join(" ")}`;
+      msg += `\n\n🇬🇧 English:\n${enTags.join(" ")}`;
     }
 
     await bot.sendMessage(chatId, msg);
-    await bot.sendMessage(chatId, "✏️ Введіть номер (1–8) для генерації ідеї:");
+    await bot.sendMessage(
+      chatId,
+      "✏️ Введіть номер (1-16) для генерації ідеї:"
+    );
     return;
   }
 
