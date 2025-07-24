@@ -526,58 +526,54 @@ async function handleKeywordSearch(chatId, keyword) {
 
   const results = await scrapeTikTokKeywordInsights(keyword, period);
 
-  if (!results.length) {
-    await bot.sendMessage(
-      chatId,
-      `⚠️ Creative Center не знайшов результатів для: "${keyword}".`
-    );
+if (!results.length) {
+  await bot.sendMessage(
+    chatId,
+    `⚠️ Creative Center не знайшов результатів для: "${keyword}".`
+  );
 
-    // GPT fallback – українські та англійські хештеги окремо
-    const gpt = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content:
-            `Ти TikTok-експерт. Згенеруй 8 перспективних українських хештегів і 8 англійських ` +
-            `з content gap у ніші "${keyword}". Спочатку дай блок "🇺🇦 Українські", потім "🇬🇧 English". Хештеги подавай через кому.`,
-        },
-      ],
-      max_tokens: 300,
-    });
+  // GPT fallback – українські та англійські хештеги окремо
+  const gpt = await openai.chat.completions.create({
+    model: "gpt-3.5-turbo",
+    messages: [
+      {
+        role: "system",
+        content:
+          `Ти TikTok-експерт. Згенеруй 8 перспективних українських хештегів і 8 англійських ` +
+          `з content gap у ніші "${keyword}". Спочатку дай блок "🇺🇦 Українські", потім "🇬🇧 English". Хештеги подавай через кому.`,
+      },
+    ],
+    max_tokens: 300,
+  });
 
-    const raw = gpt.choices[0].message.content || "";
+  const raw = gpt.choices[0].message.content || "";
 
-    const [uaBlock, enBlock] = raw.split(/🇬🇧|English/i);
-    const uaTags = (uaBlock?.match(/#\S+/g) || []).slice(0, 8);
-    const enTags = (enBlock?.match(/#\S+/g) || []).slice(0, 8);
+  const [uaBlock, enBlock] = raw.split(/🇬🇧|English/i);
+  const uaTags = (uaBlock?.match(/#\S+/g) || []).slice(0, 8);
+  const enTags = (enBlock?.match(/#\S+/g) || []).slice(0, 8);
 
-    if (!uaTags.length && !enTags.length) {
-      await bot.sendMessage(chatId, "⚠️ GPT не згенерував хештеги.");
-      return;
-    }
-
-    userStates[chatId] = {
-      waitingForKeywordPick: true,
-      keywordsList: [...uaTags, ...enTags].map((tag) => tag.replace("#", "")),
-    };
-
-    let msg = "🧠 Пропоную ці хештеги:";
-    if (uaTags.length) {
-      msg += `🇺🇦 Українські:
-${uaTags.join(" ")}
-
-`;
-    }
-    if (enTags.length) {
-      msg += `🇬🇧 English:
-${enTags.join(" ")}`;
-    }
-
-    await bot.sendMessage(chatId, msg);
-    await bot.sendMessage(chatId, "✏️ Введіть номер (1–8) для генерації ідеї:");
+  if (!uaTags.length && !enTags.length) {
+    await bot.sendMessage(chatId, "⚠️ GPT не згенерував хештеги.");
     return;
   }
+
+  userStates[chatId] = {
+    waitingForKeywordPick: true,
+    keywordsList: [...uaTags, ...enTags].map((tag) => tag.replace("#", "")),
+  };
+
+  let msg = "🧠 Пропоную ці хештеги:";
+  if (uaTags.length) {
+    msg += `\n🇺🇦 Українські:\n${uaTags.join(" ")}\n\n`;
+  }
+  if (enTags.length) {
+    msg += `🇬🇧 English:\n${enTags.join(" ")}`;
+  }
+
+  await bot.sendMessage(chatId, msg);
+  await bot.sendMessage(chatId, "✏️ Введіть номер (1–8) для генерації ідеї:");
+  return;
+}
 
   const tags = results.slice(0, 5).map((i) => i.keyword);
   userStates[chatId] = {
