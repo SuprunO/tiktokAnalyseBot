@@ -180,6 +180,7 @@ console.log("🧹 Trying to skip guide modal...");
 await page.click("[class*='guide-modal-footer-skip-btn']").catch(() => {
   console.warn("⚠️ Skip guide button not found or already closed");
 });
+await page.waitForTimeout(15000);
 
 console.log("🔍 Waiting for #keywordPeriod in DOM...");
 await page.waitForSelector("#keywordPeriod", { timeout: 10000 }).catch(() => {
@@ -534,8 +535,8 @@ if (!results.length) {
         {
           role: "system",
           content:
-            `Ти TikTok-експерт. Згенеруй 7 перспективних українських хештегів ` +
-            `з content gap у ніші "${keyword}". Відповідь через кому.`,
+            `Ти TikTok-експерт. Згенеруй 8 перспективних українських хештегів і 8 англійських` +
+            `з content gap у ніші "${keyword}". Відповідь через кому.` + `виведи іх також клаудом хештегів окремо краінською і англійською`,
         },
       ],
       max_tokens: 100,
