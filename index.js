@@ -520,13 +520,53 @@ async function handleKeywordSearch(chatId, keyword) {
 
   const results = await scrapeTikTokKeywordInsights(keyword, period);
 
-  if (!results.length) {
+  
+if (!results.length) {
     await bot.sendMessage(
       chatId,
       `⚠️ Creative Center не знайшов результатів для: "${keyword}".`
     );
+
+    // GPT fallback
+    const gpt = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content:
+            `Ти TikTok-експерт. Згенеруй 7 перспективних українських хештегів ` +
+            `з content gap у ніші "${keyword}". Відповідь через кому.`,
+        },
+      ],
+      max_tokens: 100,
+    });
+
+    const raw = gpt.choices[0].message.content;
+    const tags = raw
+      .split(",")
+      .map((h) => h.replace("#", "").trim())
+      .filter(Boolean)
+      .slice(0, 7);
+
+    if (!tags.length) {
+      await bot.sendMessage(chatId, "⚠️ GPT не зміг згенерувати хештеги.");
+      return;
+    }
+
+    userStates[chatId] = {
+      waitingForKeywordPick: true,
+      keywordsList: tags,
+    };
+
+    await bot.sendMessage(
+      chatId,
+      `🧠 Пропоную ці хештеги:
+${tags.map((h,i)=>`${i+1}. #${h}`).join("\n")}`
+    );
+    await bot.sendMessage(chatId, "✏️ Введіть номер (1–7) для генерації ідеї:");
     return;
-  }
+}
+
 
   await bot.sendMessage(
     chatId,
@@ -639,6 +679,7 @@ bot.onText(/\/start/, async (msg) => {
     `Привіт! Я TikTok-аналітичний бот.
 
 Використовуй:
+/start - запустити чатбот
 /keywords - пошук ідей за ключовим словом
 /hashtags - трендові хештеги
 /tracks - популярна музика
