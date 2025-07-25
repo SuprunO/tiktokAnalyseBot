@@ -115,31 +115,6 @@ function formatMusicList(data) {
     .join("\n\n");
 }
 
-async function waitForSelectorWithRetry(
-  page,
-  selector,
-  maxRetries = 3,
-  delay = 5000
-) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      console.log(`🔄 Attempt ${i + 1} to find selector: ${selector}`);
-      await page.waitForSelector(selector, { timeout: 10000 });
-      console.log(`✅ Selector found: ${selector}`);
-      return;
-    } catch (err) {
-      console.warn(`⚠️ Selector not found on attempt ${i + 1}`);
-      if (i < maxRetries - 1) {
-        await page.waitForTimeout(delay);
-      } else {
-        throw new Error(
-          `❌ Failed to find selector ${selector} after ${maxRetries} attempts`
-        );
-      }
-    }
-  }
-}
-
 // ==============================
 // SCRAPER FUNCTIONS
 // ==============================
@@ -184,7 +159,7 @@ async function scrapeTikTokKeywordInsights(keyword, period = 7) {
 
     console.log("🔍 Waiting for #keywordPeriod in DOM...");
     await page
-      .waitForSelector("#keywordPeriod", { timeout: 10000 })
+      .waitForSelector("#keywordPeriod>span", { timeout: 15000 })
       .catch(() => {
         throw new Error("❌ #keywordPeriod not found in DOM at all");
       });
@@ -207,13 +182,6 @@ async function scrapeTikTokKeywordInsights(keyword, period = 7) {
       };
     });
     console.log("🧾 keywordPeriod style debug:", periodDebug);
-
-    // 💾 Збереження скріншоту
-    await page.screenshot({
-      path: "/mnt/data/render_keywordPeriod_debug.png",
-      fullPage: true,
-    });
-    console.log("📸 Screenshot saved as render_keywordPeriod_debug.png");
 
     // 🚀 Пробуємо клік
     if (
