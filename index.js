@@ -1,3 +1,4 @@
+
 require("dotenv").config();
 
 const express = require("express");
@@ -17,6 +18,8 @@ if (!TELEGRAM_TOKEN || !OPENAI_KEY) {
   process.exit(1);
 }
 
+// ...existing code...
+
 // ==============================
 // EXPRESS APP SETUP
 // ==============================
@@ -35,6 +38,8 @@ const openai = new OpenAI({ apiKey: OPENAI_KEY });
 let bot;
 let activeScrapes = 0;
 const userStates = {};
+
+
 
 if (RENDER_EXTERNAL_URL) {
   console.log("🟢 Running in Webhook mode");
@@ -62,6 +67,86 @@ app.listen(PORT, "0.0.0.0", () => {
       .catch(console.error);
   }
 });
+
+// ==============================
+// HASHTAG CLOUD SERVICE
+// ==============================
+
+// Hashtag cloud generator
+async function generateCloud(keyword) {
+  function parseGptHashtags(response) {
+    const hashtagRegex = /#[\w\p{L}\p{N}\-_\.]+/gu;
+    const uaPart = response.split("🇺🇦 Українські:")[1]?.split("🇬🇧 English:")[0] || "";
+    const enPart = response.split("🇬🇧 English:")[1] || "";
+    let uaTags = (uaPart.match(hashtagRegex) || []).map((t) => t.trim());
+    let enTags = (enPart.match(hashtagRegex) || []).map((t) => t.trim());
+    uaTags = [...new Set(uaTags)].slice(0, 10);
+    enTags = [...new Set(enTags)].slice(0, 10);
+    return { uaTags, enTags };
+  }
+  const gpt = await openai.chat.completions.create({
+    model: "gpt-3.5-turbo",
+    messages: [
+      {
+        role: "system",
+        content: `Ти TikTok-експерт. Згенеруй 10 перспективних українських хештегів і 10 англійських з content gap у ніші "${keyword}". \nФормат: спочатку блок "🇺🇦 Українські:" з 10 хештегів через кому, потім новий рядок "🇬🇧 English:" з 10 англійських хештегів через кому.`,
+      },
+    ],
+    max_tokens: 400,
+  });
+  const response = gpt.choices[0].message.content || "";
+  return parseGptHashtags(response);
+}
+
+// Handler for user reply after /hashtagcloud (moved to top-level)
+async function handleHashtagCloud(chatId, keyword) {
+  try {
+    console.log(`[hashtagcloud] Received keyword: ${keyword}`);
+    await bot.sendMessage(chatId, `☁️ Введене слово: "${keyword}"\nГенерую хмару з 10 українських і 10 англійських хештегів, найкращих для content gap...`);
+    const { uaTags, enTags } = await generateCloud(keyword);
+    console.log(`[hashtagcloud] GPT result: UA: ${uaTags.length}, EN: ${enTags.length}`);
+    if (!uaTags.length && !enTags.length) {
+      await bot.sendMessage(chatId, "⚠️ GPT не згенерував хештеги.");
+    } else {
+      let msgText = `☁️ Хештег-хмари для "${keyword}":`;
+      if (uaTags.length) {
+        msgText += `\n🇺🇦 Українські:\n${uaTags.join(" ")}`;
+      }
+      if (enTags.length) {
+        msgText += `\n\n🇬🇧 English:\n${enTags.join(" ")}`;
+      }
+      await bot.sendMessage(chatId, msgText);
+    }
+    // Prompt for another word
+    userStates[chatId] = { waitingForHashtagCloud: true };
+    await bot.sendMessage(chatId, "🔄 Введіть інше слово для нової хештег-хмари або /cancel для виходу:");
+  } catch (e) {
+    console.error("❌ Error in /hashtagcloud:", e);
+    await bot.sendMessage(chatId, `⚠️ Виникла помилка при генерації хештегів: ${e.message}`);
+    userStates[chatId] = { waitingForHashtagCloud: true };
+    await bot.sendMessage(chatId, "🔄 Введіть інше слово для нової хештег-хмари або /cancel для виходу:");
+  }
+}
+
+// Register /hashtagcloud command after bot initialization
+function registerHashtagCloudCommand() {
+  // Interactive /hashtagcloud: ask for keyword, then generate cloud
+  bot.onText(/^\/hashtagcloud(?:\s+(.*))?$/i, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const keyword = match && match[1] ? match[1].trim() : "";
+    if (!keyword) {
+      userStates[chatId] = { waitingForHashtagCloud: true };
+      await bot.sendMessage(chatId, "☁️ Введіть ключове слово для генерації хештег-хмари:");
+      return;
+    }
+    await handleHashtagCloud(chatId, keyword);
+  });
+}
+
+// Register custom commands after bot is initialized
+registerHashtagCloudCommand();
+
+
 
 // ==============================
 // HELPERS
@@ -501,6 +586,18 @@ async function handleKeywordSearch(chatId, keyword) {
     );
 
     // GPT fallback – українські та англійські хештеги окремо
+    // --- Robust GPT hashtag parsing ---
+    function parseGptHashtags(response) {
+      const hashtagRegex = /#[\w\p{L}\p{N}\-_\.]+/gu;
+      const uaPart = response.split("🇺🇦 Українські:")[1]?.split("🇬🇧 English:")[0] || "";
+      const enPart = response.split("🇬🇧 English:")[1] || "";
+      let uaTags = (uaPart.match(hashtagRegex) || []).map((t) => t.trim());
+      let enTags = (enPart.match(hashtagRegex) || []).map((t) => t.trim());
+      uaTags = [...new Set(uaTags)].slice(0, 8);
+      enTags = [...new Set(enTags)].slice(0, 8);
+      return { uaTags, enTags };
+    }
+
     const gpt = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
@@ -514,39 +611,14 @@ async function handleKeywordSearch(chatId, keyword) {
     });
 
     const response = gpt.choices[0].message.content || "";
-
-    // Parse the response to extract hashtags
-    const uaPart =
-      response.split("🇺🇦 Українські:")[1]?.split("🇬🇧 English:")[0] || "";
-    const enPart = response.split("🇬🇧 English:")[1] || "";
-
-    const uaTags = uaPart.match(/#\w+/g)?.slice(0, 8) || [];
-    const enTags = enPart.match(/#\w+/g)?.slice(0, 8) || [];
+    const { uaTags, enTags } = parseGptHashtags(response);
 
     if (!uaTags.length && !enTags.length) {
       await bot.sendMessage(chatId, "⚠️ GPT не згенерував хештеги.");
       return;
     }
 
-    userStates[chatId] = {
-      waitingForKeywordPick: true,
-      keywordsList: [...uaTags, ...enTags].map((tag) => tag.replace("#", "")),
-    };
-
-    let msg = "🧠 Пропоную ці хештеги:";
-    if (uaTags.length) {
-      msg += `\n🇺🇦 Українські:\n${uaTags.join(" ")}`;
-    }
-    if (enTags.length) {
-      msg += `\n\n🇬🇧 English:\n${enTags.join(" ")}`;
-    }
-
-    await bot.sendMessage(chatId, msg);
-    await bot.sendMessage(
-      chatId,
-      "✏️ Введіть номер (1-16) для генерації ідеї:"
-    );
-    return;
+    // ...existing code...
   }
 
   // Send results to chat
@@ -665,6 +737,8 @@ bot.onText(/\/start/, async (msg) => {
 /keywords - пошук ідей за ключовим словом
 /hashtags - трендові хештеги
 /tracks - популярна музика
+/hashtagcloud - генерація хештег-хмар
+Використовуйте ці команди для отримання аналітики та ідей для контенту.
 
 Вкажи команду для початку.`
   );
@@ -704,7 +778,14 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = (msg.text || "").trim();
 
-  if (!text || text.startsWith("/")) return; // Ignore commands here
+  if (!text || text.startsWith("/")) {
+    // If user sends /cancel, exit hashtagcloud mode
+    if (text === "/cancel" && state.waitingForHashtagCloud) {
+      userStates[chatId] = {};
+      await bot.sendMessage(chatId, "❌ Вихід з режиму генерації хештег-хмар.");
+    }
+    return;
+  }
 
   const state = userStates[chatId] || {};
 
@@ -729,6 +810,11 @@ bot.on("message", async (msg) => {
     }
     if (state.waitingForPeriodForTracks) {
       if (await handleTrackPeriod(chatId, text)) return;
+    }
+    if (state.waitingForHashtagCloud) {
+      userStates[chatId] = {};
+      await handleHashtagCloud(chatId, text);
+      return;
     }
   } catch (e) {
     console.error("❌ Error handling message:", e);
